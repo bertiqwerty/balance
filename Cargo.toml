@@ -9,6 +9,8 @@ rust-version = "1.65"
 [dependencies]
 csv = "1.1.6"
 egui = "0.20.0"
+rand = "0.8.5"
+rand_distr = "0.4.3"
 eframe = { version = "0.20.0", default-features = false, features = [
     # "accesskit",     # Make egui comptaible with screen readers. NOTE: adds a lot of dependencies.
     "default_fonts", # Embed the default egui fonts.

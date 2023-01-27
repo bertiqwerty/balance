@@ -1,3 +1,6 @@
+use rand::thread_rng;
+use rand_distr::{Distribution, Normal};
+
 pub struct RebalanceData<'a> {
     interval: usize,
     fractions: &'a [f64],
@@ -26,6 +29,30 @@ pub fn compute_balance<'a>(
         }
     }
     balances.iter().sum()
+}
+
+const N_SIGMAS: usize = 12;
+
+
+pub fn random_walk(mu: f64, sigma_mean: f64, n_months: usize) -> Vec<f64> {
+    let sigma_distribution = Normal::new(sigma_mean, sigma_mean).unwrap();
+    let mut sigma_rng = thread_rng();
+    let mut rv_rng = thread_rng();
+    let mut res = vec![1.0; n_months];
+    let mut last_sigmas = [sigma_mean; N_SIGMAS];
+    for (i, sigma) in (1..n_months).zip(sigma_distribution.sample_iter(&mut sigma_rng)) {
+        for i in 0..9 {
+            let tmp = last_sigmas[i + 1];
+            last_sigmas[i] = tmp;
+        }
+        last_sigmas[9] = sigma;
+        last_sigmas.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let sigma = last_sigmas[N_SIGMAS / 2].abs();
+        let d = Normal::new(mu, sigma).unwrap();
+        let rv = d.sample(&mut rv_rng);
+        res[i] = res[i - 1] + rv;
+    }
+    res
 }
 
 #[cfg(test)]

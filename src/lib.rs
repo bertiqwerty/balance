@@ -3,4 +3,5 @@
 mod app;
 mod compute;
 mod io;
+mod core_types;
 pub use app::BalanceApp;
