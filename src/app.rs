@@ -227,9 +227,8 @@ impl eframe::App for BalanceApp {
                     .collect::<PlotPoints>(),
             );
             //The central panel the region left after adding TopPanel's and SidePanel's
-            egui::plot::Plot::new("example_plot")
-                .show(ui, |plot_ui| plot_ui.line(line));
-                
+            egui::plot::Plot::new("example_plot").show(ui, |plot_ui| plot_ui.line(line));
+
             egui::warn_if_debug_build(ui);
         });
 
