@@ -9,6 +9,6 @@ pub type BalResult<T> = Result<T, BalError>;
 
 pub fn to_bres<E: Debug>(e: E) -> BalError {
     BalError {
-        msg: format!("{:?}", e),
+        msg: format!("{e:?}"),
     }
 }

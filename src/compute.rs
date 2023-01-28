@@ -7,10 +7,10 @@ pub struct _RebalanceData<'a> {
     fractions: &'a [f64],
 }
 
-pub fn _compute_balance<'a>(
+pub fn _compute_balance(
     price_devs: &[&[f64]],
     initial_balances: &[f64],
-    rebalance_interval: Option<_RebalanceData<'a>>,
+    rebalance_interval: Option<_RebalanceData<'_>>,
 ) -> f64 {
     let mut balances: Vec<f64> = initial_balances.to_vec();
     for (idx_prev, idx) in (0..price_devs[0].len()).zip(1..price_devs[0].len()) {

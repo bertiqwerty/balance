@@ -53,7 +53,7 @@ fn trigger_dl(url: &str, rx: Sender<ehttp::Result<ehttp::Response>>, ctx: Contex
     ehttp::fetch(req, move |response| {
         match rx.send(response) {
             Ok(_) => {}
-            Err(e) => println!("{:#?}", e),
+            Err(e) => println!("{e:#?}"),
         };
         ctx.request_repaint();
     });
@@ -228,12 +228,12 @@ impl<'a> eframe::App for BalanceApp<'a> {
                                     self.status_msg = None;
                                 }
                                 Err(e) => {
-                                    self.status_msg = Some(format!("{:?}", e));
+                                    self.status_msg = Some(format!("{e:?}"));
                                 }
                             };
                         }
                         Err(e) => {
-                            self.status_msg = Some(format!("{:?}", e));
+                            self.status_msg = Some(format!("{e:?}"));
                         }
                     };
                 }
@@ -289,7 +289,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                         read_csv_from_str(resp.text().unwrap()).unwrap(),
                     ),
                     Err(e) => {
-                        self.status_msg = Some(format!("{:?}", e));
+                        self.status_msg = Some(format!("{e:?}"));
                         mem::take(&mut self.charts.tmp)
                     }
                 };
