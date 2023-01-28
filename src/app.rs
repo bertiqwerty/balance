@@ -18,10 +18,10 @@ enum Download {
 
 #[derive(PartialEq, Clone)]
 enum VolaAmount {
-    VeryLow,
-    Low,
-    Mid,
-    High,
+    No,
+    Lo,
+    Mi,
+    Hi,
 }
 
 fn trigger_dl(url: &str, rx: Sender<Download>, ctx: Context) {
@@ -42,7 +42,7 @@ struct SimInput {
 impl SimInput {
     fn new() -> Self {
         SimInput {
-            vola: VolaAmount::Mid,
+            vola: VolaAmount::Mi,
             expected_yearly_return: "".to_string(),
             n_months: "".to_string(),
         }
@@ -50,10 +50,10 @@ impl SimInput {
     fn parse(&self) -> BalResult<(f64, f64, usize)> {
         Ok((
             match self.vola {
-                VolaAmount::VeryLow => 0.05,
-                VolaAmount::Low => 0.1,
-                VolaAmount::Mid => 0.2,
-                VolaAmount::High => 0.4,
+                VolaAmount::No => 0.0,
+                VolaAmount::Lo => 0.05,
+                VolaAmount::Mi => 0.1,
+                VolaAmount::Hi => 0.2,
             },
             self.expected_yearly_return.parse().map_err(to_bres)?,
             self.n_months.parse().map_err(to_bres)?,
@@ -79,8 +79,8 @@ impl Default for BalanceApp {
             rx,
             tx,
             download: Download::None,
-            values: vec![0.5, 0.75, 1.5],
-            dates: vec![1, 2, 3],
+            values: vec![],
+            dates: vec![],
             status_msg: None,
             sim_input: SimInput::new(),
         }
@@ -123,18 +123,10 @@ impl eframe::App for BalanceApp {
             });
             ui.horizontal(|ui| {
                 ui.label("vola");
-                ui.radio_value(
-                    &mut self.sim_input.vola,
-                    VolaAmount::VeryLow,
-                    "very low".to_string(),
-                );
-                ui.radio_value(&mut self.sim_input.vola, VolaAmount::Low, "low".to_string());
-                ui.radio_value(&mut self.sim_input.vola, VolaAmount::Mid, "mid".to_string());
-                ui.radio_value(
-                    &mut self.sim_input.vola,
-                    VolaAmount::High,
-                    "high".to_string(),
-                );
+                ui.radio_value(&mut self.sim_input.vola, VolaAmount::No, "no".to_string());
+                ui.radio_value(&mut self.sim_input.vola, VolaAmount::Lo, "low".to_string());
+                ui.radio_value(&mut self.sim_input.vola, VolaAmount::Mi, "mid".to_string());
+                ui.radio_value(&mut self.sim_input.vola, VolaAmount::Hi, "high".to_string());
             });
             ui.horizontal(|ui| {
                 ui.label("#months");
@@ -143,12 +135,11 @@ impl eframe::App for BalanceApp {
             if ui.button("simulate").clicked() {
                 match self.sim_input.parse() {
                     Ok(data) => {
-                        let (noise, ave_yearly_return, n_months) = data;
-                        let mu = ave_yearly_return / 120.0;
-                        match random_walk(mu, noise, n_months) {
+                        let (noise, expected_yearly_return, n_months) = data;
+                        match random_walk(expected_yearly_return, noise, n_months) {
                             Ok(values) => {
                                 self.values = values;
-                                self.dates = (0..n_months).collect::<Vec<_>>();
+                                self.dates = (0..(n_months + 1)).collect::<Vec<_>>();
                                 self.status_msg = None;
                             }
                             Err(e) => {
