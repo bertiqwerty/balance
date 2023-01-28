@@ -9,8 +9,8 @@ rust-version = "1.65"
 [dependencies]
 csv = "1.1.6"
 egui = "0.20.0"
-rand = "0.8.5"
-rand_distr = "0.4.3"
+rand = { version = "0.8.5", default-features = false, features = ["std_rng"] }
+rand_distr = { version = "0.4.3", default-features = false}
 eframe = { version = "0.20.0", default-features = false, features = [
     # "accesskit",     # Make egui comptaible with screen readers. NOTE: adds a lot of dependencies.
     "default_fonts", # Embed the default egui fonts.
@@ -23,6 +23,7 @@ eframe = { version = "0.20.0", default-features = false, features = [
 # web-sys = {version = "0.3.60", features = ["Window"] }
 wasm-bindgen-futures = "0.4"
 wasm-bindgen = "0.2.83"
+js-sys = "0.3.60"
 # wasm-bindgen-test = "0.3.33"
 ehttp = "0.2.0"
 # native:

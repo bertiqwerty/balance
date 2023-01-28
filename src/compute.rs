@@ -1,4 +1,5 @@
-use rand::thread_rng;
+use crate::core_types::{to_bres, BalResult};
+use rand::{rngs::StdRng, SeedableRng};
 use rand_distr::{Distribution, Normal};
 
 pub struct RebalanceData<'a> {
@@ -31,15 +32,33 @@ pub fn compute_balance<'a>(
     balances.iter().sum()
 }
 
-const N_SIGMAS: usize = 12;
 
+#[cfg(target_arch = "wasm32")]
+fn get_now() -> BalResult<u64> {
+    use wasm_bindgen::prelude::*;
+    let now = (js_sys::Date::now() * 1000.0) as u128;
+    Ok((now % (u64::MAX as u128)) as u64)
+}
 
-pub fn random_walk(mu: f64, sigma_mean: f64, n_months: usize) -> Vec<f64> {
-    let sigma_distribution = Normal::new(sigma_mean, sigma_mean).unwrap();
-    let mut sigma_rng = thread_rng();
-    let mut rv_rng = thread_rng();
+#[cfg(not(target_arch = "wasm32"))]
+fn get_now() -> BalResult<u64> {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    Ok((SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(to_bres)?
+        .as_nanos()
+        % (u64::MAX as u128)) as u64)
+}
+
+const SIGMA_WINDOW_SIZE: usize = 12;
+
+pub fn random_walk(mu: f64, sigma_mean: f64, n_months: usize) -> BalResult<Vec<f64>> {
+    let sigma_distribution = Normal::new(sigma_mean, sigma_mean).map_err(to_bres)?;
+    let unix_to_now_secs = get_now()?;
+    let mut sigma_rng = StdRng::seed_from_u64(unix_to_now_secs);
+    let mut rv_rng = StdRng::seed_from_u64(unix_to_now_secs);
     let mut res = vec![1.0; n_months];
-    let mut last_sigmas = [sigma_mean; N_SIGMAS];
+    let mut last_sigmas = [sigma_mean; SIGMA_WINDOW_SIZE];
     for (i, sigma) in (1..n_months).zip(sigma_distribution.sample_iter(&mut sigma_rng)) {
         for i in 0..9 {
             let tmp = last_sigmas[i + 1];
@@ -47,12 +66,12 @@ pub fn random_walk(mu: f64, sigma_mean: f64, n_months: usize) -> Vec<f64> {
         }
         last_sigmas[9] = sigma;
         last_sigmas.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        let sigma = last_sigmas[N_SIGMAS / 2].abs();
+        let sigma = last_sigmas[SIGMA_WINDOW_SIZE / 2].abs();
         let d = Normal::new(mu, sigma).unwrap();
         let rv = d.sample(&mut rv_rng);
         res[i] = res[i - 1] + rv;
     }
-    res
+    Ok(res)
 }
 
 #[cfg(test)]

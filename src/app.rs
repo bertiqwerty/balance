@@ -123,11 +123,18 @@ impl eframe::App for BalanceApp {
             });
             ui.horizontal(|ui| {
                 ui.label("vola");
-                ui.radio_value(&mut self.sim_input.vola, VolaAmount::VeryLow, "very low".to_string());
+                ui.radio_value(
+                    &mut self.sim_input.vola,
+                    VolaAmount::VeryLow,
+                    "very low".to_string(),
+                );
                 ui.radio_value(&mut self.sim_input.vola, VolaAmount::Low, "low".to_string());
                 ui.radio_value(&mut self.sim_input.vola, VolaAmount::Mid, "mid".to_string());
-                ui.radio_value(&mut self.sim_input.vola, VolaAmount::High, "high".to_string());
-                
+                ui.radio_value(
+                    &mut self.sim_input.vola,
+                    VolaAmount::High,
+                    "high".to_string(),
+                );
             });
             ui.horizontal(|ui| {
                 ui.label("#months");
@@ -138,9 +145,16 @@ impl eframe::App for BalanceApp {
                     Ok(data) => {
                         let (noise, ave_yearly_return, n_months) = data;
                         let mu = ave_yearly_return / 120.0;
-                        self.values = random_walk(mu, noise, n_months);
-                        self.dates = (0..n_months).collect::<Vec<_>>();
-                        self.status_msg = None;
+                        match random_walk(mu, noise, n_months) {
+                            Ok(values) => {
+                                self.values = values;
+                                self.dates = (0..n_months).collect::<Vec<_>>();
+                                self.status_msg = None;
+                            }
+                            Err(e) => {
+                                self.status_msg = Some(format!("{:?}", e));
+                            }
+                        };
                     }
                     Err(e) => {
                         self.status_msg = Some(format!("{:?}", e));
