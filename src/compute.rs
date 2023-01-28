@@ -34,14 +34,14 @@ pub fn compute_balance<'a>(
 
 
 #[cfg(target_arch = "wasm32")]
-fn get_now() -> BalResult<u64> {
+fn unix_to_now_nanos() -> BalResult<u64> {
     use wasm_bindgen::prelude::*;
     let now = (js_sys::Date::now() * 1000.0) as u128;
     Ok((now % (u64::MAX as u128)) as u64)
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn get_now() -> BalResult<u64> {
+fn unix_to_now_nanos() -> BalResult<u64> {
     use std::time::{SystemTime, UNIX_EPOCH};
     Ok((SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -53,12 +53,11 @@ fn get_now() -> BalResult<u64> {
 const SIGMA_WINDOW_SIZE: usize = 12;
 
 pub fn random_walk(mu: f64, sigma_mean: f64, n_months: usize) -> BalResult<Vec<f64>> {
+    let mut sigma_rng = StdRng::seed_from_u64(unix_to_now_nanos()?);
     let sigma_distribution = Normal::new(sigma_mean, sigma_mean).map_err(to_bres)?;
-    let unix_to_now_secs = get_now()?;
-    let mut sigma_rng = StdRng::seed_from_u64(unix_to_now_secs);
-    let mut rv_rng = StdRng::seed_from_u64(unix_to_now_secs);
     let mut res = vec![1.0; n_months];
     let mut last_sigmas = [sigma_mean; SIGMA_WINDOW_SIZE];
+    let mut rv_rng = StdRng::seed_from_u64(unix_to_now_nanos()?);
     for (i, sigma) in (1..n_months).zip(sigma_distribution.sample_iter(&mut sigma_rng)) {
         for i in 0..9 {
             let tmp = last_sigmas[i + 1];
