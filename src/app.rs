@@ -25,7 +25,7 @@ enum VolaAmount {
 }
 
 fn trigger_dl(url: &str, rx: Sender<Download>, ctx: Context) {
-    let req = ehttp::Request::get(&url);
+    let req = ehttp::Request::get(url);
     ehttp::fetch(req, move |response| {
         match rx.send(Download::Done(response)) {
             Ok(_) => {}
@@ -191,8 +191,8 @@ impl eframe::App for BalanceApp {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             // The central panel the region left after adding TopPanel's and SidePanel's
-            match self.download {
-                Download::InProgress => match self.tx.try_recv() {
+            if let Download::InProgress = self.download {
+                match self.tx.try_recv() {
                     Ok(d) => {
                         self.download = d;
                         self.status_msg = None;
@@ -200,8 +200,7 @@ impl eframe::App for BalanceApp {
                     _ => {
                         self.status_msg = Some("waiting...".to_string());
                     }
-                },
-                _ => {}
+                }
             }
             if let Download::Done(d) = &self.download {
                 (self.dates, self.values) = match d {
@@ -229,8 +228,8 @@ impl eframe::App for BalanceApp {
             );
             //The central panel the region left after adding TopPanel's and SidePanel's
             egui::plot::Plot::new("example_plot")
-                .show(ui, |plot_ui| plot_ui.line(line))
-                .response;
+                .show(ui, |plot_ui| plot_ui.line(line));
+                
             egui::warn_if_debug_build(ui);
         });
 

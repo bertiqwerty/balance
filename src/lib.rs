@@ -2,6 +2,6 @@
 
 mod app;
 mod compute;
-mod io;
 mod core_types;
+mod io;
 pub use app::BalanceApp;

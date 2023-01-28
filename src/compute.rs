@@ -2,17 +2,17 @@ use crate::core_types::{to_bres, BalResult};
 use rand::{rngs::StdRng, SeedableRng};
 use rand_distr::{Distribution, Normal};
 
-pub struct RebalanceData<'a> {
+pub struct _RebalanceData<'a> {
     interval: usize,
     fractions: &'a [f64],
 }
 
-pub fn compute_balance<'a>(
+pub fn _compute_balance<'a>(
     price_devs: &[&[f64]],
     initial_balances: &[f64],
-    rebalance_interval: Option<RebalanceData<'a>>,
+    rebalance_interval: Option<_RebalanceData<'a>>,
 ) -> f64 {
-    let mut balances: Vec<f64> = initial_balances.iter().copied().collect();
+    let mut balances: Vec<f64> = initial_balances.to_vec();
     for (idx_prev, idx) in (0..price_devs[0].len()).zip(1..price_devs[0].len()) {
         price_devs
             .iter()
@@ -31,7 +31,6 @@ pub fn compute_balance<'a>(
     }
     balances.iter().sum()
 }
-
 
 #[cfg(target_arch = "wasm32")]
 fn unix_to_now_nanos() -> BalResult<u64> {
@@ -85,30 +84,30 @@ fn test_rebalance() {
         .chain(iter::repeat(4.0).take(rebalance_interval))
         .collect::<Vec<_>>();
     let em_vals = vec![1.0; rebalance_interval * 3];
-    let x = compute_balance(
+    let x = _compute_balance(
         &[&world_vals, &em_vals],
         &[0.5, 0.5],
-        Some(RebalanceData {
+        Some(_RebalanceData {
             interval: rebalance_interval,
             fractions: &[0.5, 0.5],
         }),
     );
     assert!((x - 2.25).abs() < 1e-12);
-    let x = compute_balance(&[&world_vals, &em_vals], &[7.0, 3.0], None);
+    let x = _compute_balance(&[&world_vals, &em_vals], &[7.0, 3.0], None);
     assert!((x - 31.0).abs() < 1e-12);
-    let x = compute_balance(
+    let x = _compute_balance(
         &[&world_vals, &em_vals],
         &[0.7, 0.3],
-        Some(RebalanceData {
+        Some(_RebalanceData {
             interval: rebalance_interval,
             fractions: &[0.7, 0.3],
         }),
     );
     assert!((x - 2.89).abs() < 1e-12);
-    let x = compute_balance(
+    let x = _compute_balance(
         &[&world_vals, &em_vals],
         &[1.0, 0.0],
-        Some(RebalanceData {
+        Some(_RebalanceData {
             interval: rebalance_interval,
             fractions: &[1.0, 0.0],
         }),
@@ -116,10 +115,10 @@ fn test_rebalance() {
     assert!((x - 4.0).abs() < 1e-12);
     let world_vals = vec![1.0; 24];
     let em_vals = vec![1.0; 24];
-    let x = compute_balance(
+    let x = _compute_balance(
         &[&world_vals, &em_vals],
         &[0.7, 0.3],
-        Some(RebalanceData {
+        Some(_RebalanceData {
             interval: 12,
             fractions: &[0.7, 0.3],
         }),
@@ -133,10 +132,10 @@ fn test_rebalance() {
         .take(10)
         .chain(iter::once(1.1))
         .collect::<Vec<_>>();
-    let x = compute_balance(
+    let x = _compute_balance(
         &[&world_vals, &em_vals],
         &[0.7, 0.3],
-        Some(RebalanceData {
+        Some(_RebalanceData {
             interval: 11,
             fractions: &[0.7, 0.3],
         }),
