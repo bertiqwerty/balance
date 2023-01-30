@@ -1,26 +1,38 @@
 use crate::core_types::{to_bres, BalResult};
 use rand::{rngs::StdRng, SeedableRng};
 use rand_distr::{Distribution, Normal};
+use std::iter;
 
 pub struct _RebalanceData<'a> {
+    /// after how many months is re-balancing applied
     interval: usize,
+    /// fractions of the indices
     fractions: &'a [f64],
 }
 
+/// Compute the balance given initial values and price developments of securities
+///
+/// Arguments
+/// * `price_devs` - developments of the individual securities (e.g., stock prices, index prices, ...)
+///                  2d-vector, first axis addresses the security, second axis is the price
+/// * `initial_balances` - initial balance per security (e.g., stock price, index price, ...)
+/// * `rebalance_interval` - pass if indices are rebalanced
+///
 pub fn _compute_balance(
     price_devs: &[&[f64]],
     initial_balances: &[f64],
     rebalance_interval: Option<_RebalanceData<'_>>,
 ) -> f64 {
     let mut balances: Vec<f64> = initial_balances.to_vec();
-    for (idx_prev, idx) in (0..price_devs[0].len()).zip(1..price_devs[0].len()) {
+    for (idx_prev_month, idx_month) in (0..price_devs[0].len()).zip(1..price_devs[0].len()) {
+        // update the balance for each security given at the current month
         price_devs
             .iter()
             .zip(balances.iter_mut())
-            .for_each(|(pd, balance)| *balance = *balance * pd[idx] / pd[idx_prev]);
+            .for_each(|(pd, balance)| *balance = *balance * pd[idx_month] / pd[idx_prev_month]);
         let total: f64 = balances.iter().sum();
         match &rebalance_interval {
-            Some(rbd) if idx % rbd.interval == 0 => {
+            Some(rbd) if idx_month % rbd.interval == 0 => {
                 rbd.fractions
                     .iter()
                     .zip(balances.iter_mut())
@@ -30,6 +42,21 @@ pub fn _compute_balance(
         }
     }
     balances.iter().sum()
+}
+
+pub fn _adapt_pricedev_to_initial_balance<'a>(
+    mut initial_balance: f64,
+    price_dev: &'a [f64],
+) -> impl Iterator<Item = f64> + 'a {
+    iter::once(initial_balance).chain(
+        price_dev[0..price_dev.len()]
+            .iter()
+            .zip(price_dev[1..].iter())
+            .map(move |(pd_prev, pd)| {
+                initial_balance = initial_balance * pd / pd_prev;
+                initial_balance
+            }),
+    )
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -55,13 +82,14 @@ pub fn random_walk(
     expected_yearly_return: f64,
     sigma_mean: f64,
     n_months: usize,
+    initial_balance: f64,
 ) -> BalResult<Vec<f64>> {
     let mut sigma_rng = StdRng::seed_from_u64(unix_to_now_nanos()?);
     let sigma_distribution = Normal::new(sigma_mean, sigma_mean).map_err(to_bres)?;
-    let mut res = vec![1.0; n_months + 1];
     let mut last_sigmas = [sigma_mean; SIGMA_WINDOW_SIZE];
     let mut rv_rng = StdRng::seed_from_u64(unix_to_now_nanos()?);
-    let mut price = 1.0;
+    let mut price = initial_balance;
+    let mut res = vec![price; n_months + 1];
 
     let mu_price_pair = |price, i_month| {
         if (i_month) % 12 == 0 {
@@ -91,7 +119,17 @@ pub fn random_walk(
 }
 
 #[cfg(test)]
-use std::{iter, vec};
+use std::vec;
+
+#[test]
+fn test_adapt() {
+    let price_dev = vec![3.0, 6.0, 12.0, 6.0];
+    let price_ref = vec![10.0, 20.0, 40.0, 20.0];
+    let adapted = _adapt_pricedev_to_initial_balance(10.0, &price_dev);
+    for (a, p) in adapted.zip(price_ref.iter()) {
+        assert!((a - p) < 1e-12);
+    }
+}
 
 #[test]
 fn test_rebalance() {
