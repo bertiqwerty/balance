@@ -45,16 +45,17 @@ pub fn _compute_balance(
 }
 
 pub fn _adapt_pricedev_to_initial_balance<'a>(
-    mut initial_balance: f64,
+    initial_balance: f64,
     price_dev: &'a [f64],
 ) -> impl Iterator<Item = f64> + 'a {
+    let mut balance = initial_balance;
     iter::once(initial_balance).chain(
         price_dev[0..price_dev.len()]
             .iter()
             .zip(price_dev[1..].iter())
             .map(move |(pd_prev, pd)| {
-                initial_balance = initial_balance * pd / pd_prev;
-                initial_balance
+                balance = balance * pd / pd_prev;
+                balance
             }),
     )
 }

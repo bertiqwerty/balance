@@ -40,7 +40,7 @@ impl Display for Vola {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Vola::No => f.write_str("no"),
-            Vola::VryLo => f.write_str("very ery low"),
+            Vola::VryLo => f.write_str("very low"),
             Vola::Lo => f.write_str("low"),
             Vola::Mi => f.write_str("mid"),
             Vola::Hi => f.write_str("high"),
@@ -106,11 +106,12 @@ impl SimInput {
         }
     }
     fn parse(&self) -> BalResult<(f64, f64, usize, f64)> {
+        let initial_balance = self.initial_balance.parse().map_err(to_bres)?;
         Ok((
-            self.vola.to_float(),
+            self.vola.to_float() * initial_balance,
             self.expected_yearly_return.parse().map_err(to_bres)?,
             self.n_months.parse().map_err(to_bres)?,
-            self.initial_balance.parse().map_err(to_bres)?,
+            initial_balance
         ))
     }
 }
