@@ -44,6 +44,7 @@ pub fn _compute_balance(
     balances.iter().sum()
 }
 
+#[allow(clippy::needless_lifetimes)]
 pub fn _adapt_pricedev_to_initial_balance<'a>(
     initial_balance: f64,
     price_dev: &'a [f64],

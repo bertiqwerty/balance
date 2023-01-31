@@ -72,7 +72,7 @@ fn normalize_fractions(mut fractions: Vec<f64>, pivot_idx: usize) -> Vec<f64> {
         .iter()
         .filter(|idx| **idx != pivot_idx)
     {
-        fractions[*idx] = fractions[*idx] - (new_fraction_reduction + rest);
+        fractions[*idx] -= new_fraction_reduction + rest;
         fractions[*idx] = if fractions[*idx] < 0.0 {
             rest += fractions[*idx].abs();
             0.0
@@ -111,7 +111,7 @@ impl SimInput {
             self.vola.to_float() * initial_balance,
             self.expected_yearly_return.parse().map_err(to_bres)?,
             self.n_months.parse().map_err(to_bres)?,
-            initial_balance
+            initial_balance,
         ))
     }
 }
