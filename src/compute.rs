@@ -10,38 +10,57 @@ pub struct _RebalanceData<'a> {
     fractions: &'a [f64],
 }
 
+///
 /// Compute the balance given initial values and price developments of securities
 ///
 /// Arguments
 /// * `price_devs` - developments of the individual securities (e.g., stock prices, index prices, ...)
 ///                  2d-vector, first axis addresses the security, second axis is the price
 /// * `initial_balances` - initial balance per security (e.g., stock price, index price, ...)
+/// * `monthly_payments - monthly payments for each security, e.g., from a savings plan
+///                       index 0 here corresponds to index 1 in price dev, since the month-0-payment 
+///                       is covered by `initial_balances` 
 /// * `rebalance_interval` - pass if indices are rebalanced
+/// 
+/// Returns the total balance and the sum of all payments
 ///
-pub fn _compute_balance(
+pub fn _compute_total_balance(
     price_devs: &[&[f64]],
     initial_balances: &[f64],
-    rebalance_interval: Option<_RebalanceData<'_>>,
-) -> f64 {
-    let mut balances: Vec<f64> = initial_balances.to_vec();
-    for (idx_prev_month, idx_month) in (0..price_devs[0].len()).zip(1..price_devs[0].len()) {
-        // update the balance for each security given at the current month
-        price_devs
-            .iter()
-            .zip(balances.iter_mut())
-            .for_each(|(pd, balance)| *balance = *balance * pd[idx_month] / pd[idx_prev_month]);
-        let total: f64 = balances.iter().sum();
-        match &rebalance_interval {
-            Some(rbd) if idx_month % rbd.interval == 0 => {
-                rbd.fractions
-                    .iter()
-                    .zip(balances.iter_mut())
-                    .for_each(|(frac, balance)| *balance = frac * total);
+    monthly_payments: Option<&[&[f64]]>,
+    rebalance_data: Option<_RebalanceData<'_>>,
+) -> (f64, f64) {
+    if let Some(shortest_len) = price_devs.iter().map(|pd| pd.len()).min() {
+        let mut balances: Vec<f64> = initial_balances.to_vec();
+        let total_initial_balances: f64 = initial_balances.iter().sum();
+        let mut monthly_payment_upto_now = 0.0;
+        let total_balance_over_month = (0..shortest_len).zip(1..shortest_len).map(|(i_prev_month, i_month)| {
+            // update the balance for each security at the current month
+            for i_sec in 0..balances.len() {
+                let payment_this_month =
+                    monthly_payments.map(|mp| mp[i_sec][i_month - 1]).unwrap_or(0.0);
+                let price_update =
+                    balances[i_sec] * price_devs[i_sec][i_month] / price_devs[i_sec][i_prev_month];
+                balances[i_sec] = payment_this_month + price_update;
+                monthly_payment_upto_now += payment_this_month;
             }
-            _ => (),
-        }
+
+            let total: f64 = balances.iter().sum();
+            match &rebalance_data {
+                Some(rbd) if i_month % rbd.interval == 0 => {
+                    rbd.fractions
+                        .iter()
+                        .zip(balances.iter_mut())
+                        .for_each(|(frac, balance)| *balance = frac * total);
+                }
+                _ => (),
+            }
+            (balances.iter().sum(), total_initial_balances + monthly_payment_upto_now)
+        });
+        total_balance_over_month.last().unwrap()
+    } else {
+        (initial_balances.iter().sum(), initial_balances.iter().sum())
     }
-    balances.iter().sum()
 }
 
 #[allow(clippy::needless_lifetimes)]
@@ -142,46 +161,61 @@ fn test_rebalance() {
         .chain(iter::repeat(4.0).take(rebalance_interval))
         .collect::<Vec<_>>();
     let em_vals = vec![1.0; rebalance_interval * 3];
-    let x = _compute_balance(
+
+    let (b, p) = _compute_total_balance(
         &[&world_vals, &em_vals],
         &[0.5, 0.5],
+        None,
         Some(_RebalanceData {
             interval: rebalance_interval,
             fractions: &[0.5, 0.5],
         }),
     );
-    assert!((x - 2.25).abs() < 1e-12);
-    let x = _compute_balance(&[&world_vals, &em_vals], &[7.0, 3.0], None);
-    assert!((x - 31.0).abs() < 1e-12);
-    let x = _compute_balance(
+    assert!((b - 2.25).abs() < 1e-12);
+    assert!((p - 1.0).abs() < 1e-12);
+
+    let (b, p) = _compute_total_balance(&[&world_vals, &em_vals], &[7.0, 3.0], None, None);
+    assert!((b - 31.0).abs() < 1e-12);
+    assert!((p - 10.0).abs() < 1e-12);
+
+    let (x, p) = _compute_total_balance(
         &[&world_vals, &em_vals],
         &[0.7, 0.3],
+        None,
         Some(_RebalanceData {
             interval: rebalance_interval,
             fractions: &[0.7, 0.3],
         }),
     );
     assert!((x - 2.89).abs() < 1e-12);
-    let x = _compute_balance(
+    assert!((p - 1.0).abs() < 1e-12);
+
+    let (x, p) = _compute_total_balance(
         &[&world_vals, &em_vals],
         &[1.0, 0.0],
+        None,
         Some(_RebalanceData {
             interval: rebalance_interval,
             fractions: &[1.0, 0.0],
         }),
     );
     assert!((x - 4.0).abs() < 1e-12);
+    assert!((p - 1.0).abs() < 1e-12);
+
     let world_vals = vec![1.0; 24];
     let em_vals = vec![1.0; 24];
-    let x = _compute_balance(
+    let (x, p) = _compute_total_balance(
         &[&world_vals, &em_vals],
         &[0.7, 0.3],
+        None,
         Some(_RebalanceData {
             interval: 12,
             fractions: &[0.7, 0.3],
         }),
     );
     assert!((x - 1.0).abs() < 1e-12);
+    assert!((p - 1.0).abs() < 1e-12);
+
     let world_vals = iter::repeat(1.0)
         .take(10)
         .chain(iter::once(1.1))
@@ -190,13 +224,27 @@ fn test_rebalance() {
         .take(10)
         .chain(iter::once(1.1))
         .collect::<Vec<_>>();
-    let x = _compute_balance(
+    let (x, p) = _compute_total_balance(
         &[&world_vals, &em_vals],
         &[0.7, 0.3],
+        None,
         Some(_RebalanceData {
             interval: 11,
             fractions: &[0.7, 0.3],
         }),
     );
     assert!((x - 1.1).abs() < 1e-12);
+    assert!((p - 1.0).abs() < 1e-12);
+
+    let compound_interest: Vec<f64> = random_walk(5.0, 0.0, 240, 1000.0).unwrap();
+    let ci_len = compound_interest.len();
+    let monthly_payments: Vec<f64> = vec![1000.0; ci_len - 1];
+    let (b, p) = _compute_total_balance(
+        &[&compound_interest],
+        &[10000.0],
+        Some(&[&monthly_payments]),
+        None,
+    );
+    assert!((b - 432257.37).abs() < 1e-2);
+    assert!((p - 250000.0).abs() < 1e-12);
 }
