@@ -6,7 +6,9 @@ pub struct BlcError {
 }
 impl BlcError {
     pub fn new(msg: &str) -> Self {
-        BlcError { msg: msg.to_string() }
+        BlcError {
+            msg: msg.to_string(),
+        }
     }
 }
 #[macro_export]

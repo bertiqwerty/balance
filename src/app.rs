@@ -207,7 +207,7 @@ impl Charts {
         let start_date = self
             .persisted
             .iter()
-            .map(|c| c.dates.iter().next().unwrap_or(&usize::MAX))
+            .map(|c| c.dates.first().unwrap_or(&usize::MAX))
             .max()
             .unwrap();
         let end_date = self
@@ -554,11 +554,11 @@ impl<'a> eframe::App for BalanceApp<'a> {
                                 monthly_payments,
                                 rebalance_interval,
                             ) {
-                                self.status_msg = Some(format!("{:?}", e));
+                                self.status_msg = Some(format!("{e:?}"));
                             }
                         }
                         Err(e) => {
-                            self.status_msg = Some(format!("{:?}", e));
+                            self.status_msg = Some(format!("{e:?}"));
                         }
                     }
                 }
