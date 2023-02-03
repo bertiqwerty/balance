@@ -1,4 +1,4 @@
-use egui::plot::{Legend, Line, PlotPoints};
+use egui::plot::{Legend, Line, PlotPoints, PlotUi};
 use egui::{Context, Ui};
 use std::fmt::Display;
 use std::mem;
@@ -6,7 +6,8 @@ use std::sync::mpsc::Sender;
 // use web_sys::{Request, RequestInit, RequestMode, Response};
 use std::sync::mpsc;
 
-use crate::compute::random_walk;
+use crate::blcerr;
+use crate::compute::{compute_balance_over_months, random_walk};
 use crate::core_types::{to_blc, BlcResult};
 use crate::io::read_csv_from_str;
 
@@ -94,7 +95,6 @@ struct SimInput {
     vola: Vola,
     expected_yearly_return: String,
     n_months: String,
-    initial_balance: String,
 }
 impl SimInput {
     fn new() -> Self {
@@ -102,16 +102,13 @@ impl SimInput {
             vola: Vola::Mi,
             expected_yearly_return: "".to_string(),
             n_months: "".to_string(),
-            initial_balance: "1.0".to_string(),
         }
     }
-    fn parse(&self) -> BlcResult<(f64, f64, usize, f64)> {
-        let initial_balance = self.initial_balance.parse().map_err(to_blc)?;
+    fn parse(&self) -> BlcResult<(f64, f64, usize)> {
         Ok((
-            self.vola.to_float() * initial_balance,
+            self.vola.to_float(),
             self.expected_yearly_return.parse().map_err(to_blc)?,
             self.n_months.parse().map_err(to_blc)?,
-            initial_balance,
         ))
     }
 }
@@ -150,6 +147,9 @@ struct Charts {
     persisted: Vec<Chart>,
     fractions: Vec<f64>,
     fraction_strings: Vec<String>,
+    total_balance_over_month: Option<Chart>,
+    total_payments_over_month: Option<Chart>,
+    plot_balance: bool,
 }
 impl Charts {
     fn adapt_name(&self, name: String) -> String {
@@ -170,12 +170,119 @@ impl Charts {
         }
     }
 
+    fn compute_balance(&mut self, initial_balance: f64, monthly_payments: f64) -> BlcResult<()> {
+        let mut lens = self.persisted.iter().map(|dev| dev.dates.len());
+        let first_len = lens.next().ok_or_else(|| blcerr!("no charts added"))?;
+        let start_date = self
+            .persisted
+            .iter()
+            .map(|c| c.dates.iter().next().unwrap_or(&usize::MAX))
+            .max()
+            .unwrap();
+        let end_date = self
+            .persisted
+            .iter()
+            .map(|c| c.dates.iter().last().unwrap_or(&0))
+            .min()
+            .unwrap();
+        println!("sd {}\ned {}", start_date, end_date);
+        if end_date <= start_date {
+            Err(blcerr!("start date needs to be strictly before enddate"))
+        } else if lens.any(|len| len != first_len) {
+            Err(blcerr!("all charts need the same length"))
+        } else {
+            let price_devs = self
+                .persisted
+                .iter()
+                .map(|c| {
+                    let start_idx = c.dates.iter().position(|d| d >= start_date).unwrap();
+                    let end_idx = c.dates.iter().position(|d| d >= end_date).unwrap();
+                    &c.values[start_idx..end_idx]
+                })
+                .collect::<Vec<_>>();
+
+            let initial_balances = self
+                .fractions
+                .iter()
+                .map(|fr| fr * initial_balance)
+                .collect::<Vec<_>>();
+            let monthly_payments = self
+                .fractions
+                .iter()
+                .map(|fr| vec![monthly_payments * *fr; first_len - 1])
+                .collect::<Vec<_>>();
+            let monthly_payments_refs = monthly_payments
+                .iter()
+                .map(|mp| &mp[..])
+                .collect::<Vec<_>>();
+            let balance_over_month = compute_balance_over_months(
+                &price_devs,
+                &initial_balances,
+                Some(&monthly_payments_refs),
+                None,
+            )?;
+            let (balances, payments): (Vec<f64>, Vec<f64>) = balance_over_month.unzip();
+            let start_idx = self.persisted[0]
+                .dates
+                .iter()
+                .position(|d| d >= start_date)
+                .unwrap();
+            let end_idx = self.persisted[0]
+                .dates
+                .iter()
+                .position(|d| d >= end_date)
+                .unwrap();
+            let dates = self.persisted[0].dates[start_idx..end_idx].to_vec();
+            let b_chart = Chart::new("total balances".to_string(), dates.clone(), balances);
+            let p_chart = Chart::new("total payments".to_string(), dates, payments);
+            self.total_balance_over_month = Some(b_chart);
+            self.total_payments_over_month = Some(p_chart);
+            Ok(())
+        }
+    }
+
     fn set_fractions(&mut self, fractions: Vec<f64>) {
         self.fraction_strings = fractions
             .iter()
             .map(|fr| format!("{fr:.2}"))
             .collect::<Vec<_>>();
         self.fractions = fractions;
+    }
+
+    fn plot(&self, ui: &mut PlotUi) {
+        if self.plot_balance {
+            if let (Some(balances), Some(payments)) = (
+                &self.total_balance_over_month,
+                &self.total_payments_over_month,
+            ) {
+                ui.line(balances.to_line());
+                ui.line(payments.to_line());
+            }
+        } else {
+            for c in &self.persisted {
+                ui.line(c.to_line())
+            }
+            ui.line(self.tmp.to_line());
+        }
+    }
+}
+
+struct PaymentData {
+    initial_balance_str: String,
+    monthly_payment_str: String,
+}
+impl PaymentData {
+    fn new() -> Self {
+        PaymentData {
+            initial_balance_str: "1.0".to_string(),
+            monthly_payment_str: "0.0".to_string(),
+        }
+    }
+    fn parse(&self) -> BlcResult<(f64, f64)> {
+        Ok((
+            self.initial_balance_str.parse().map_err(to_blc)?,
+            self.monthly_payment_str.parse().map_err(to_blc)?,
+        ))
     }
 }
 
@@ -187,6 +294,7 @@ pub struct BalanceApp<'a> {
     status_msg: Option<String>,
     sim: SimInput,
     charts: Charts,
+    payment: PaymentData,
 }
 
 impl<'a> Default for BalanceApp<'a> {
@@ -199,6 +307,7 @@ impl<'a> Default for BalanceApp<'a> {
             status_msg: None,
             sim: SimInput::new(),
             charts: Charts::default(),
+            payment: PaymentData::new(),
         }
     }
 }
@@ -215,12 +324,7 @@ impl<'a> BalanceApp<'a> {
         //The central panel the region left after adding TopPanel's and SidePanel's
         egui::plot::Plot::new("month vs price")
             .legend(Legend::default())
-            .show(ui, |plot_ui| {
-                for c in &self.charts.persisted {
-                    plot_ui.line(c.to_line())
-                }
-                plot_ui.line(self.charts.tmp.to_line());
-            });
+            .show(ui, |plot_ui| self.charts.plot(plot_ui));
     }
 
     fn check_download(&mut self) {
@@ -240,7 +344,6 @@ impl<'a> BalanceApp<'a> {
                     let (dates, values) = read_csv_from_str(resp.text().unwrap()).unwrap();
                     Chart::from_tuple(name.to_string(), (dates, values))
                 }
-
                 Err(e) => {
                     self.status_msg = Some(format!("{e:?}"));
                     mem::take(&mut self.charts.tmp)
@@ -274,7 +377,11 @@ impl<'a> eframe::App for BalanceApp<'a> {
         egui::SidePanel::left("side_panel").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.label("initial balance");
-                ui.text_edit_singleline(&mut self.sim.initial_balance);
+                ui.text_edit_singleline(&mut self.payment.initial_balance_str);
+            });
+            ui.horizontal(|ui| {
+                ui.label("monthly payment");
+                ui.text_edit_singleline(&mut self.payment.monthly_payment_str);
             });
             ui.separator();
             ui.heading("Simulate");
@@ -298,13 +405,8 @@ impl<'a> eframe::App for BalanceApp<'a> {
                 if ui.button("simulate").clicked() {
                     match self.sim.parse() {
                         Ok(data) => {
-                            let (noise, expected_yearly_return, n_months, initial_balance) = data;
-                            match random_walk(
-                                expected_yearly_return,
-                                noise,
-                                n_months,
-                                initial_balance,
-                            ) {
+                            let (noise, expected_yearly_return, n_months) = data;
+                            match random_walk(expected_yearly_return, noise, n_months) {
                                 Ok(values) => {
                                     self.charts.tmp.name = self.charts.adapt_name(format!(
                                         "{}_{}_{}",
@@ -381,6 +483,26 @@ impl<'a> eframe::App for BalanceApp<'a> {
                 });
             }
 
+            ui.horizontal(|ui| {
+                if ui.button("compute balance").clicked() {
+                    match self.payment.parse() {
+                        Ok((initial_balance, monthly_payments)) => {
+                            if let Err(e) = self
+                                .charts
+                                .compute_balance(initial_balance, monthly_payments)
+                            {
+                                self.status_msg = Some(format!("{:?}", e));
+                            }
+                        }
+                        Err(e) => {
+                            self.status_msg = Some(format!("{:?}", e));
+                        }
+                    }
+                }
+                if ui.button("toggle plot").clicked() {
+                    self.charts.plot_balance = !self.charts.plot_balance;
+                }
+            });
             self.plot(ui);
 
             egui::warn_if_debug_build(ui);
