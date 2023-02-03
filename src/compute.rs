@@ -6,11 +6,12 @@ use rand::{rngs::StdRng, SeedableRng};
 use rand_distr::{Distribution, Normal};
 use std::iter;
 
+#[derive(Clone, Debug)]
 pub struct RebalanceData<'a> {
     /// after how many months is re-balancing applied
-    interval: usize,
+    pub interval: usize,
     /// fractions of the indices
-    fractions: &'a [f64],
+    pub fractions: &'a [f64],
 }
 
 ///
@@ -39,8 +40,7 @@ pub fn compute_balance_over_months<'a>(
         .map(|pd| pd.len())
         .min()
         .ok_or(blcerr!("empty price dev"))?;
-
-    Ok((0..shortest_len).zip(1..shortest_len).scan(
+    let balances_over_months = (0..shortest_len).zip(1..shortest_len).scan(
         (initial_balances.to_vec(), 0.0),
         move |(balances, monthly_payments_upto_now), (i_prev_month, i_month)| {
             // update the balance for each security at the current month
@@ -69,9 +69,9 @@ pub fn compute_balance_over_months<'a>(
                 total_initial_balances + *monthly_payments_upto_now,
             ))
         },
-    ))
+    );
+    Ok(iter::once((total_initial_balances, total_initial_balances)).chain(balances_over_months))
 }
-
 
 #[allow(clippy::needless_lifetimes)]
 pub fn _adapt_pricedev_to_initial_balance<'a>(

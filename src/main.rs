@@ -9,7 +9,7 @@ fn main() {
 
     let native_options = eframe::NativeOptions::default();
     eframe::run_native(
-        "eframe template",
+        "Balance",
         native_options,
         Box::new(|cc| Box::new(balance::BalanceApp::new(cc))),
     );

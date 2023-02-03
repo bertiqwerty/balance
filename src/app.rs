@@ -7,7 +7,7 @@ use std::sync::mpsc::Sender;
 use std::sync::mpsc;
 
 use crate::blcerr;
-use crate::compute::{compute_balance_over_months, random_walk};
+use crate::compute::{compute_balance_over_months, random_walk, RebalanceData};
 use crate::core_types::{to_blc, BlcResult};
 use crate::io::read_csv_from_str;
 
@@ -84,6 +84,21 @@ fn normalize_fractions(mut fractions: Vec<f64>, pivot_idx: usize) -> Vec<f64> {
     fractions
 }
 
+fn redestribute_fractions(mut fractions: Vec<f64>, to_redestribute: f64) -> Vec<f64> {
+    let mut rest = 0.0;
+    let new_fraction_increase = to_redestribute / fractions.len() as f64;
+    for idx in sorted_indices(&fractions).iter().rev() {
+        fractions[*idx] += new_fraction_increase + rest;
+        fractions[*idx] = if fractions[*idx] > 1.0 {
+            rest += fractions[*idx] - 1.0;
+            1.0
+        } else {
+            fractions[*idx]
+        };
+    }
+    fractions
+}
+
 fn add_fraction(mut fractions: Vec<f64>) -> Vec<f64> {
     let new_fraction = 1.0 / (1.0 + fractions.len() as f64);
     fractions.push(new_fraction);
@@ -100,8 +115,8 @@ impl SimInput {
     fn new() -> Self {
         SimInput {
             vola: Vola::Mi,
-            expected_yearly_return: "".to_string(),
-            n_months: "".to_string(),
+            expected_yearly_return: "7.0".to_string(),
+            n_months: "180".to_string(),
         }
     }
     fn parse(&self) -> BlcResult<(f64, f64, usize)> {
@@ -170,7 +185,23 @@ impl Charts {
         }
     }
 
-    fn compute_balance(&mut self, initial_balance: f64, monthly_payments: f64) -> BlcResult<()> {
+    fn remove(&mut self, idx: usize) {
+        self.persisted.remove(idx);
+        self.fraction_strings.remove(idx);
+        let fr_removed = self.fractions.remove(idx);
+        let new_fractions = redestribute_fractions(mem::take(&mut self.fractions), fr_removed);
+        for (fs, nf) in self.fraction_strings.iter_mut().zip(new_fractions.iter()) {
+            *fs = format!("{nf:0.2}");
+        }
+        self.fractions = new_fractions;
+    }
+
+    fn compute_balance(
+        &mut self,
+        initial_balance: f64,
+        monthly_payments: f64,
+        rebalance_interval: Option<usize>,
+    ) -> BlcResult<()> {
         let mut lens = self.persisted.iter().map(|dev| dev.dates.len());
         let first_len = lens.next().ok_or_else(|| blcerr!("no charts added"))?;
         let start_date = self
@@ -185,7 +216,6 @@ impl Charts {
             .map(|c| c.dates.iter().last().unwrap_or(&0))
             .min()
             .unwrap();
-        println!("sd {}\ned {}", start_date, end_date);
         if end_date <= start_date {
             Err(blcerr!("start date needs to be strictly before enddate"))
         } else if lens.any(|len| len != first_len) {
@@ -196,7 +226,7 @@ impl Charts {
                 .iter()
                 .map(|c| {
                     let start_idx = c.dates.iter().position(|d| d >= start_date).unwrap();
-                    let end_idx = c.dates.iter().position(|d| d >= end_date).unwrap();
+                    let end_idx = c.dates.iter().position(|d| d >= end_date).unwrap() + 1;
                     &c.values[start_idx..end_idx]
                 })
                 .collect::<Vec<_>>();
@@ -219,7 +249,10 @@ impl Charts {
                 &price_devs,
                 &initial_balances,
                 Some(&monthly_payments_refs),
-                None,
+                rebalance_interval.map(|ri| RebalanceData {
+                    interval: ri,
+                    fractions: &self.fractions,
+                }),
             )?;
             let (balances, payments): (Vec<f64>, Vec<f64>) = balance_over_month.unzip();
             let start_idx = self.persisted[0]
@@ -231,7 +264,8 @@ impl Charts {
                 .dates
                 .iter()
                 .position(|d| d >= end_date)
-                .unwrap();
+                .unwrap()
+                + 1;
             let dates = self.persisted[0].dates[start_idx..end_idx].to_vec();
             let b_chart = Chart::new("total balances".to_string(), dates.clone(), balances);
             let p_chart = Chart::new("total payments".to_string(), dates, payments);
@@ -270,18 +304,21 @@ impl Charts {
 struct PaymentData {
     initial_balance_str: String,
     monthly_payment_str: String,
+    rebalance_interval_str: String,
 }
 impl PaymentData {
     fn new() -> Self {
         PaymentData {
-            initial_balance_str: "1.0".to_string(),
+            initial_balance_str: "10000.0".to_string(),
             monthly_payment_str: "0.0".to_string(),
+            rebalance_interval_str: "".to_string(),
         }
     }
-    fn parse(&self) -> BlcResult<(f64, f64)> {
+    fn parse(&self) -> BlcResult<(f64, f64, Option<usize>)> {
         Ok((
             self.initial_balance_str.parse().map_err(to_blc)?,
             self.monthly_payment_str.parse().map_err(to_blc)?,
+            self.rebalance_interval_str.parse().ok(),
         ))
     }
 }
@@ -324,6 +361,8 @@ impl<'a> BalanceApp<'a> {
         //The central panel the region left after adding TopPanel's and SidePanel's
         egui::plot::Plot::new("month vs price")
             .legend(Legend::default())
+            .x_grid_spacer(|_| vec![])
+            .y_grid_spacer(|_| vec![])
             .show(ui, |plot_ui| self.charts.plot(plot_ui));
     }
 
@@ -375,14 +414,18 @@ impl<'a> eframe::App for BalanceApp<'a> {
         });
 
         egui::SidePanel::left("side_panel").show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                ui.label("initial balance");
-                ui.text_edit_singleline(&mut self.payment.initial_balance_str);
-            });
-            ui.horizontal(|ui| {
-                ui.label("monthly payment");
-                ui.text_edit_singleline(&mut self.payment.monthly_payment_str);
-            });
+            egui::Grid::new("inputs-balance-payments-interval")
+                .num_columns(2)
+                .show(ui, |ui| {
+                    ui.label("initial balance");
+                    ui.text_edit_singleline(&mut self.payment.initial_balance_str);
+                    ui.end_row();
+                    ui.label("monthly payment");
+                    ui.text_edit_singleline(&mut self.payment.monthly_payment_str);
+                    ui.end_row();
+                    ui.label("rebalance interval");
+                    ui.text_edit_singleline(&mut self.payment.rebalance_interval_str);
+                });
             ui.separator();
             ui.heading("Simulate");
             ui.horizontal(|ui| {
@@ -467,8 +510,9 @@ impl<'a> eframe::App for BalanceApp<'a> {
                 ui.label("ready");
             }
             let chart_inds = 0..(self.charts.persisted.len());
-            for idx in chart_inds {
-                ui.horizontal(|ui| {
+            let mut remove_idx = None;
+            egui::Grid::new("grid-persistend-charts").show(ui, |ui| {
+                for idx in chart_inds {
                     ui.label(&self.charts.persisted[idx].name);
                     if ui
                         .text_edit_singleline(&mut self.charts.fraction_strings[idx])
@@ -481,19 +525,35 @@ impl<'a> eframe::App for BalanceApp<'a> {
                         }
                     }
                     if ui.button("x").clicked() {
-                        self.charts.persisted.remove(idx);
+                        remove_idx = Some(idx);
                     }
-                });
+                    ui.end_row();
+                }
+            });
+
+            if let Some(idx) = remove_idx {
+                self.charts.remove(idx);
+            }
+
+            if let Some(tbom) = &self.charts.total_balance_over_month {
+                if let Some(balance) = tbom.values.iter().last() {
+                    ui.label(format!("final balance {balance:0.2}"));
+                } else {
+                    ui.label("final balance -");
+                }
+            } else {
+                ui.label("final balance -");
             }
 
             ui.horizontal(|ui| {
                 if ui.button("compute balance").clicked() {
                     match self.payment.parse() {
-                        Ok((initial_balance, monthly_payments)) => {
-                            if let Err(e) = self
-                                .charts
-                                .compute_balance(initial_balance, monthly_payments)
-                            {
+                        Ok((initial_balance, monthly_payments, rebalance_interval)) => {
+                            if let Err(e) = self.charts.compute_balance(
+                                initial_balance,
+                                monthly_payments,
+                                rebalance_interval,
+                            ) {
                                 self.status_msg = Some(format!("{:?}", e));
                             }
                         }
@@ -502,7 +562,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                         }
                     }
                 }
-                if ui.button("toggle plot").clicked() {
+                if ui.button("toggle plots").clicked() {
                     self.charts.plot_balance = !self.charts.plot_balance;
                 }
             });
@@ -510,15 +570,6 @@ impl<'a> eframe::App for BalanceApp<'a> {
 
             egui::warn_if_debug_build(ui);
         });
-
-        if false {
-            egui::Window::new("Window").show(ctx, |ui| {
-                ui.label("Windows can be moved by dragging them.");
-                ui.label("They are automatically sized based on contents.");
-                ui.label("You can turn on resizing and scrolling if you like.");
-                ui.label("You would normally choose either panels OR windows.");
-            });
-        }
     }
 }
 
@@ -542,4 +593,11 @@ fn test_sorted_inds() {
     let v = vec![0.4, 123.3, 0.2, -1.0, 0.0];
     let inds = sorted_indices(&v);
     assert_eq!(vec![3, 4, 2, 0, 1], inds);
+}
+
+#[test]
+fn test_redistribute() {
+    let frs = vec![0.1, 0.6, 0.1];
+    let x = redestribute_fractions(frs, 0.2);
+    assert!((x.iter().sum::<f64>() - 1.0).abs() < 1e-12);
 }
