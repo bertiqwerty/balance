@@ -1,4 +1,4 @@
-use crate::core_types::{to_bres, BalResult};
+use crate::core_types::{to_blc, BlcResult};
 use rand::{rngs::StdRng, SeedableRng};
 use rand_distr::{Distribution, Normal};
 use std::iter;
@@ -81,18 +81,18 @@ pub fn _adapt_pricedev_to_initial_balance<'a>(
 }
 
 #[cfg(target_arch = "wasm32")]
-fn unix_to_now_nanos() -> BalResult<u64> {
+fn unix_to_now_nanos() -> BlcResult<u64> {
     use wasm_bindgen::prelude::*;
     let now = (js_sys::Date::now() * 1000.0) as u128;
     Ok((now % (u64::MAX as u128)) as u64)
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn unix_to_now_nanos() -> BalResult<u64> {
+fn unix_to_now_nanos() -> BlcResult<u64> {
     use std::time::{SystemTime, UNIX_EPOCH};
     Ok((SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map_err(to_bres)?
+        .map_err(to_blc)?
         .as_nanos()
         % (u64::MAX as u128)) as u64)
 }
@@ -104,9 +104,9 @@ pub fn random_walk(
     sigma_mean: f64,
     n_months: usize,
     initial_balance: f64,
-) -> BalResult<Vec<f64>> {
+) -> BlcResult<Vec<f64>> {
     let mut sigma_rng = StdRng::seed_from_u64(unix_to_now_nanos()?);
-    let sigma_distribution = Normal::new(sigma_mean, sigma_mean).map_err(to_bres)?;
+    let sigma_distribution = Normal::new(sigma_mean, sigma_mean).map_err(to_blc)?;
     let mut last_sigmas = [sigma_mean; SIGMA_WINDOW_SIZE];
     let mut rv_rng = StdRng::seed_from_u64(unix_to_now_nanos()?);
     let mut price = initial_balance;
@@ -132,7 +132,7 @@ pub fn random_walk(
         let mpp = mu_price_pair(price, i);
         let mu = mpp.0;
         price = mpp.1;
-        let d = Normal::new(mu, sigma).map_err(to_bres)?;
+        let d = Normal::new(mu, sigma).map_err(to_blc)?;
         let rv = d.sample(&mut rv_rng);
         res[i] = res[i - 1] + rv;
     }

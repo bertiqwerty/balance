@@ -7,7 +7,7 @@ use std::sync::mpsc::Sender;
 use std::sync::mpsc;
 
 use crate::compute::random_walk;
-use crate::core_types::{to_bres, BalResult};
+use crate::core_types::{to_blc, BlcResult};
 use crate::io::read_csv_from_str;
 
 #[derive(Debug)]
@@ -105,12 +105,12 @@ impl SimInput {
             initial_balance: "1.0".to_string(),
         }
     }
-    fn parse(&self) -> BalResult<(f64, f64, usize, f64)> {
-        let initial_balance = self.initial_balance.parse().map_err(to_bres)?;
+    fn parse(&self) -> BlcResult<(f64, f64, usize, f64)> {
+        let initial_balance = self.initial_balance.parse().map_err(to_blc)?;
         Ok((
             self.vola.to_float() * initial_balance,
-            self.expected_yearly_return.parse().map_err(to_bres)?,
-            self.n_months.parse().map_err(to_bres)?,
+            self.expected_yearly_return.parse().map_err(to_blc)?,
+            self.n_months.parse().map_err(to_blc)?,
             initial_balance,
         ))
     }
