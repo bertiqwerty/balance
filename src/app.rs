@@ -480,6 +480,9 @@ impl<'a> eframe::App for BalanceApp<'a> {
                             self.charts.set_fractions(fractions);
                         }
                     }
+                    if ui.button("x").clicked() {
+                        self.charts.persisted.remove(idx);
+                    }
                 });
             }
 
