@@ -11,7 +11,7 @@ impl BlcError {
 }
 #[macro_export]
 macro_rules! blcerr {
-    ($s:literal, $( $exps:expr ),*) => {
+    ($s:literal $(, $exps:expr )*) => {
         $crate::core_types::BlcError::new(format!($s, $($exps,)*).as_str())
     }
 }

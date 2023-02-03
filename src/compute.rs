@@ -1,4 +1,7 @@
-use crate::core_types::{to_blc, BlcResult};
+use crate::{
+    blcerr,
+    core_types::{to_blc, BlcResult},
+};
 use rand::{rngs::StdRng, SeedableRng};
 use rand_distr::{Distribution, Normal};
 use std::iter;
@@ -10,39 +13,30 @@ pub struct _RebalanceData<'a> {
     fractions: &'a [f64],
 }
 
-///
-/// Compute the balance given initial values and price developments of securities
-///
-/// Arguments
-/// * `price_devs` - developments of the individual securities (e.g., stock prices, index prices, ...)
-///                  2d-vector, first axis addresses the security, second axis is the price
-/// * `initial_balances` - initial balance per security (e.g., stock price, index price, ...)
-/// * `monthly_payments - monthly payments for each security, e.g., from a savings plan
-///                       index 0 here corresponds to index 1 in price dev, since the month-0-payment 
-///                       is covered by `initial_balances` 
-/// * `rebalance_interval` - pass if indices are rebalanced
-/// 
-/// Returns the total balance and the sum of all payments
-///
-pub fn _compute_total_balance(
-    price_devs: &[&[f64]],
-    initial_balances: &[f64],
-    monthly_payments: Option<&[&[f64]]>,
-    rebalance_data: Option<_RebalanceData<'_>>,
-) -> (f64, f64) {
-    if let Some(shortest_len) = price_devs.iter().map(|pd| pd.len()).min() {
-        let mut balances: Vec<f64> = initial_balances.to_vec();
-        let total_initial_balances: f64 = initial_balances.iter().sum();
-        let mut monthly_payment_upto_now = 0.0;
-        let total_balance_over_month = (0..shortest_len).zip(1..shortest_len).map(|(i_prev_month, i_month)| {
+pub fn _compute_balance_over_months<'a>(
+    price_devs: &'a [&'a [f64]],
+    initial_balances: &'a [f64],
+    monthly_payments: Option<&'a [&'a [f64]]>,
+    rebalance_data: Option<_RebalanceData<'a>>,
+) -> BlcResult<impl Iterator<Item = (f64, f64)> + 'a> {
+    let total_initial_balances: f64 = initial_balances.iter().sum();
+    let shortest_len = price_devs
+        .iter()
+        .map(|pd| pd.len())
+        .min()
+        .ok_or(blcerr!("empty price dev"))?;
+    Ok((0..shortest_len).zip(1..shortest_len).scan(
+        (initial_balances.to_vec(), 0.0),
+        move |(balances, monthly_payments_upto_now), (i_prev_month, i_month)| {
             // update the balance for each security at the current month
             for i_sec in 0..balances.len() {
-                let payment_this_month =
-                    monthly_payments.map(|mp| mp[i_sec][i_month - 1]).unwrap_or(0.0);
+                let payment_this_month = monthly_payments
+                    .map(|mp| mp[i_sec][i_month - 1])
+                    .unwrap_or(0.0);
                 let price_update =
                     balances[i_sec] * price_devs[i_sec][i_month] / price_devs[i_sec][i_prev_month];
                 balances[i_sec] = payment_this_month + price_update;
-                monthly_payment_upto_now += payment_this_month;
+                *monthly_payments_upto_now += payment_this_month;
             }
 
             let total: f64 = balances.iter().sum();
@@ -55,9 +49,41 @@ pub fn _compute_total_balance(
                 }
                 _ => (),
             }
-            (balances.iter().sum(), total_initial_balances + monthly_payment_upto_now)
-        });
-        total_balance_over_month.last().unwrap()
+            Some((
+                balances.iter().sum::<f64>(),
+                total_initial_balances + *monthly_payments_upto_now,
+            ))
+        },
+    ))
+}
+
+///
+/// Compute the balance given initial values and price developments of securities
+///
+/// Arguments
+/// * `price_devs` - developments of the individual securities (e.g., stock prices, index prices, ...)
+///                  2d-vector, first axis addresses the security, second axis is the price
+/// * `initial_balances` - initial balance per security (e.g., stock price, index price, ...)
+/// * `monthly_payments - monthly payments for each security, e.g., from a savings plan
+///                       index 0 here corresponds to index 1 in price dev, since the month-0-payment
+///                       is covered by `initial_balances`
+/// * `rebalance_interval` - pass if indices are rebalanced
+///
+/// Returns the total balance and the sum of all payments
+///
+pub fn _compute_total_balance(
+    price_devs: &[&[f64]],
+    initial_balances: &[f64],
+    monthly_payments: Option<&[&[f64]]>,
+    rebalance_data: Option<_RebalanceData<'_>>,
+) -> (f64, f64) {
+    if let Ok(total_balance_over_months) = _compute_balance_over_months(
+        price_devs,
+        initial_balances,
+        monthly_payments,
+        rebalance_data,
+    ) {
+        total_balance_over_months.last().unwrap()
     } else {
         (initial_balances.iter().sum(), initial_balances.iter().sum())
     }
