@@ -218,8 +218,6 @@ impl Charts {
             .unwrap();
         if end_date <= start_date {
             Err(blcerr!("start date needs to be strictly before enddate"))
-        } else if lens.any(|len| len != first_len) {
-            Err(blcerr!("all charts need the same length"))
         } else {
             let price_devs = self
                 .persisted
@@ -471,9 +469,6 @@ impl<'a> eframe::App for BalanceApp<'a> {
                         }
                     };
                 }
-                if ui.button("add").clicked() {
-                    self.charts.persist_tmp();
-                }
             });
             ui.separator();
             ui.heading("Backtest data");
@@ -508,6 +503,9 @@ impl<'a> eframe::App for BalanceApp<'a> {
                 ui.label(status_msg);
             } else {
                 ui.label("ready");
+            }
+            if ui.button("add current chart").clicked() {
+                self.charts.persist_tmp();
             }
             let chart_inds = 0..(self.charts.persisted.len());
             let mut remove_idx = None;
