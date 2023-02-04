@@ -60,7 +60,9 @@ pub fn compute_balance_over_months<'a>(
                     rbd.fractions
                         .iter()
                         .zip(balances.iter_mut())
-                        .for_each(|(frac, balance)| *balance = frac * total);
+                        .for_each(|(frac, balance)| {
+                            *balance = frac * total;
+                        });
                 }
                 _ => (),
             }

@@ -317,7 +317,10 @@ impl PaymentData {
         self.initial_balance.1 = self.initial_balance.0.parse().map_err(to_blc)?;
         self.monthly_payment.1 = self.monthly_payment.0.parse().map_err(to_blc)?;
         self.rebalance_interval.1 = self.rebalance_interval.0.parse().ok();
-        println!("{:?} {:?} {:?}", self.initial_balance, self.monthly_payment, self.rebalance_interval);
+        println!(
+            "{:?} {:?} {:?}",
+            self.initial_balance, self.monthly_payment, self.rebalance_interval
+        );
         Ok(())
     }
 }
