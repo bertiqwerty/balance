@@ -7,7 +7,9 @@ use std::sync::mpsc;
 use std::sync::mpsc::Sender;
 
 use crate::blcerr;
-use crate::compute::{compute_balance_over_months, random_walk, RebalanceData};
+use crate::compute::{
+    compute_balance_over_months, random_walk, RebalanceData, _adapt_pricedev_to_initial_balance,
+};
 use crate::core_types::{to_blc, BlcResult};
 use crate::io::read_csv_from_str;
 
@@ -107,24 +109,37 @@ fn add_fraction(mut fractions: Vec<f64>) -> Vec<f64> {
 }
 
 struct SimInput {
+    start_value: String,
     vola: Vola,
     expected_yearly_return: String,
+    start_month: String,
     n_months: String,
 }
 impl SimInput {
     fn new() -> Self {
         SimInput {
+            start_value: "1.0".to_string(),
             vola: Vola::Mi,
             expected_yearly_return: "7.0".to_string(),
+            start_month: "1987/12".to_string(),
             n_months: "180".to_string(),
         }
     }
-    fn parse(&self) -> BlcResult<(f64, f64, usize)> {
-        Ok((
-            self.vola.to_float(),
-            self.expected_yearly_return.parse().map_err(to_blc)?,
-            self.n_months.parse().map_err(to_blc)?,
-        ))
+    fn parse(&self) -> BlcResult<(f64, f64, f64, usize, usize)> {
+        let start_year = &self.start_month[..4].parse::<usize>().map_err(to_blc)?;
+        let start_month = self.start_month[5..].parse::<usize>().map_err(to_blc)?;
+        if start_month == 0 || start_month > 12 {
+            Err(blcerr!("there are only 12 months"))
+        } else {
+            let start_month = start_year * 100 + start_month;
+            Ok((
+                self.start_value.parse().map_err(to_blc)?,
+                self.vola.to_float(),
+                self.expected_yearly_return.parse().map_err(to_blc)?,
+                start_month,
+                self.n_months.parse().map_err(to_blc)?,
+            ))
+        }
     }
 }
 fn slice_by_date<'a, T>(
@@ -482,10 +497,21 @@ impl<'a> eframe::App for BalanceApp<'a> {
 
         egui::SidePanel::left("side_panel").show(ctx, |ui| {
             ui.heading("Simulate");
-            ui.horizontal(|ui| {
-                ui.label("expected yearly return [%]");
-                ui.text_edit_singleline(&mut self.sim.expected_yearly_return);
-            });
+            egui::Grid::new("simulate-inputs")
+                .num_columns(2)
+                .show(ui, |ui| {
+                    ui.label("start value");
+                    ui.text_edit_singleline(&mut self.sim.start_value);
+                    ui.end_row();
+                    ui.label("expected yearly return [%]");
+                    ui.text_edit_singleline(&mut self.sim.expected_yearly_return);
+                    ui.end_row();
+                    ui.label("#months");
+                    ui.text_edit_singleline(&mut self.sim.n_months);
+                    ui.end_row();
+                    ui.label("start month (YYYY/MM)");
+                    ui.text_edit_singleline(&mut self.sim.start_month);
+                });
             ui.horizontal(|ui| {
                 ui.label("vola");
                 ui.radio_value(&mut self.sim.vola, Vola::No, format!("{}", Vola::No));
@@ -495,16 +521,13 @@ impl<'a> eframe::App for BalanceApp<'a> {
                 ui.radio_value(&mut self.sim.vola, Vola::Hi, format!("{}", Vola::Hi));
             });
             ui.horizontal(|ui| {
-                ui.label("#months");
-                ui.text_edit_singleline(&mut self.sim.n_months);
-            });
-            ui.horizontal(|ui| {
                 if ui.button("simulate").clicked() {
                     match self.sim.parse() {
                         Ok(data) => {
-                            let (noise, expected_yearly_return, n_months) = data;
+                            let (start_value, noise, expected_yearly_return, start_month, n_months) = data;
                             match random_walk(expected_yearly_return, noise, n_months) {
                                 Ok(values) => {
+                                    let values = _adapt_pricedev_to_initial_balance(start_value, &values).collect::<Vec<_>>();
                                     self.charts.tmp.name = self.charts.adapt_name(format!(
                                         "{}_{}_{}",
                                         self.sim.expected_yearly_return,
@@ -512,7 +535,15 @@ impl<'a> eframe::App for BalanceApp<'a> {
                                         self.sim.vola
                                     ));
                                     self.charts.tmp.values = values;
-                                    self.charts.tmp.dates = (0..(n_months + 1)).collect::<Vec<_>>();
+                                    self.charts.tmp.dates = (0..(n_months + 1)).map(|i| {
+                                        let start_year = start_month / 100;
+                                        let start_month = start_month % 100;
+
+                                        let n_start_months = start_year * 12 + start_month;
+                                        let n_years = (n_start_months + i) / 12;
+                                        let n_months = (n_start_months + i) % 12;
+                                        n_years * 100 + n_months
+                                    } ).collect::<Vec<_>>();
                                     self.status_msg = None;
                                     self.charts.plot_balance = false;
                                 }
@@ -530,12 +561,14 @@ impl<'a> eframe::App for BalanceApp<'a> {
             ui.separator();
             ui.heading("Backtest data");
             if ui.button("MSCI EM").clicked() {
-                let url = "https://www.bertiqwerty.com/data/msciem.csv";
+                //let url = "https://www.bertiqwerty.com/data/msciem.csv";
+                let url = "http://localhost:8000/data/msciem.csv";
                 trigger_dl(url, self.rx.clone(), ctx.clone());
                 self.download = Download::InProgress("MSCI EM");
             }
             if ui.button("MSCI World").clicked() {
-                let url = "https://www.bertiqwerty.com/data/msciworld.csv";
+                //let url = "https://www.bertiqwerty.com/data/msciworld.csv";
+                let url = "http://localhost:8000/data/msciworld.csv";
                 trigger_dl(url, self.rx.clone(), ctx.clone());
                 self.download = Download::InProgress("MSCI World");
             }
@@ -601,7 +634,10 @@ impl<'a> eframe::App for BalanceApp<'a> {
                             ui.label(format!("{balance:0.2}"));
                             ui.end_row();
                             ui.label("factor");
-                            let total_yield = balance / self.payment.initial_balance.1;
+                            let total_yield = balance
+                                / (self.payment.initial_balance.1
+                                    + self.payment.monthly_payment.1
+                                        * (tbom.dates.len() - 1) as f64);
                             ui.label(format!("{total_yield:0.2}"));
                         } else {
                             nobalance(ui);
@@ -657,10 +693,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
             });
             if let Err(e) = self.plot(ui) {
                 self.status_msg = Some(format!("{e:?}"));
-            } else {
-                self.status_msg = None;
             }
-
             egui::warn_if_debug_build(ui);
         });
     }
