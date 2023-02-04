@@ -375,7 +375,7 @@ impl<'a> BalanceApp<'a> {
                     self.status_msg = None;
                 }
                 _ => {
-                    self.status_msg = Some("waiting...".to_string());
+                    self.status_msg = Some("downloading...".to_string());
                 }
             }
         } else if let Download::Done((name, d)) = &self.download {
