@@ -56,7 +56,7 @@ pub fn compute_balance_over_months<'a>(
 
             let total: f64 = balances.iter().sum();
             match &rebalance_data {
-                Some(rbd) if i_month % rbd.interval == 0 => {
+                Some(rbd) if rbd.interval > 0 && i_month % rbd.interval == 0 => {
                     rbd.fractions
                         .iter()
                         .zip(balances.iter_mut())

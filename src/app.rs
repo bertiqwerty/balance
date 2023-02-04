@@ -1,10 +1,9 @@
-use egui::plot::{Legend, Line, PlotPoints, PlotUi};
+use egui::plot::{Corner, Legend, Line, PlotPoints, PlotUi};
 use egui::{Context, Ui};
 use std::fmt::Display;
 use std::mem;
-use std::sync::mpsc::Sender;
-// use web_sys::{Request, RequestInit, RequestMode, Response};
 use std::sync::mpsc;
+use std::sync::mpsc::Sender;
 
 use crate::blcerr;
 use crate::compute::{compute_balance_over_months, random_walk, RebalanceData};
@@ -300,24 +299,26 @@ impl Charts {
 }
 
 struct PaymentData {
-    initial_balance_str: String,
-    monthly_payment_str: String,
-    rebalance_interval_str: String,
+    initial_balance: (String, f64),
+    monthly_payment: (String, f64),
+    rebalance_interval: (String, Option<usize>),
 }
 impl PaymentData {
     fn new() -> Self {
+        let initial_balance = 10000.0;
+        let monthly_payment = 0.0;
         PaymentData {
-            initial_balance_str: "10000.0".to_string(),
-            monthly_payment_str: "0.0".to_string(),
-            rebalance_interval_str: "".to_string(),
+            initial_balance: (format!("{initial_balance:0.2}"), initial_balance),
+            monthly_payment: (format!("{monthly_payment:0.2}"), monthly_payment),
+            rebalance_interval: ("".to_string(), None),
         }
     }
-    fn parse(&self) -> BlcResult<(f64, f64, Option<usize>)> {
-        Ok((
-            self.initial_balance_str.parse().map_err(to_blc)?,
-            self.monthly_payment_str.parse().map_err(to_blc)?,
-            self.rebalance_interval_str.parse().ok(),
-        ))
+    fn parse(&mut self) -> BlcResult<()> {
+        self.initial_balance.1 = self.initial_balance.0.parse().map_err(to_blc)?;
+        self.monthly_payment.1 = self.monthly_payment.0.parse().map_err(to_blc)?;
+        self.rebalance_interval.1 = self.rebalance_interval.0.parse().ok();
+        println!("{:?} {:?} {:?}", self.initial_balance, self.monthly_payment, self.rebalance_interval);
+        Ok(())
     }
 }
 
@@ -358,7 +359,7 @@ impl<'a> BalanceApp<'a> {
     fn plot(&self, ui: &mut Ui) {
         //The central panel the region left after adding TopPanel's and SidePanel's
         egui::plot::Plot::new("month vs price")
-            .legend(Legend::default())
+            .legend(Legend::default().position(Corner::LeftTop))
             .x_grid_spacer(|_| vec![])
             .y_grid_spacer(|_| vec![])
             .show(ui, |plot_ui| self.charts.plot(plot_ui));
@@ -389,6 +390,27 @@ impl<'a> BalanceApp<'a> {
             self.download = Download::None;
         }
     }
+
+    fn recompute_balance(&mut self) {
+        if let Err(e) = self.payment.parse() {
+            self.status_msg = Some(format!("{e:?}"));
+        } else {
+            let PaymentData {
+                initial_balance: (_, initial_balance),
+                monthly_payment: (_, monthly_payment),
+                rebalance_interval: (_, rebalance_interval),
+            } = self.payment;
+            if let Err(e) =
+                self.charts
+                    .compute_balance(initial_balance, monthly_payment, rebalance_interval)
+            {
+                self.status_msg = Some(format!("{e:?}"));
+            } else {
+                self.status_msg = None;
+                self.charts.plot_balance = true;
+            }
+        }
+    }
 }
 
 impl<'a> eframe::App for BalanceApp<'a> {
@@ -412,19 +434,6 @@ impl<'a> eframe::App for BalanceApp<'a> {
         });
 
         egui::SidePanel::left("side_panel").show(ctx, |ui| {
-            egui::Grid::new("inputs-balance-payments-interval")
-                .num_columns(2)
-                .show(ui, |ui| {
-                    ui.label("initial balance");
-                    ui.text_edit_singleline(&mut self.payment.initial_balance_str);
-                    ui.end_row();
-                    ui.label("monthly payment");
-                    ui.text_edit_singleline(&mut self.payment.monthly_payment_str);
-                    ui.end_row();
-                    ui.label("rebalance interval");
-                    ui.text_edit_singleline(&mut self.payment.rebalance_interval_str);
-                });
-            ui.separator();
             ui.heading("Simulate");
             ui.horizontal(|ui| {
                 ui.label("expected yearly return [%]");
@@ -458,6 +467,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                                     self.charts.tmp.values = values;
                                     self.charts.tmp.dates = (0..(n_months + 1)).collect::<Vec<_>>();
                                     self.status_msg = None;
+                                    self.charts.plot_balance = false;
                                 }
                                 Err(e) => {
                                     self.status_msg = Some(format!("{e:?}"));
@@ -504,9 +514,60 @@ impl<'a> eframe::App for BalanceApp<'a> {
             } else {
                 ui.label("ready");
             }
-            if ui.button("add current chart").clicked() {
-                self.charts.persist_tmp();
-            }
+            egui::Grid::new("inputs-balance-payments-interval")
+                .num_columns(2)
+                .show(ui, |ui| {
+                    ui.label("initial balance");
+                    if ui
+                        .text_edit_singleline(&mut self.payment.initial_balance.0)
+                        .changed()
+                    {
+                        self.recompute_balance();
+                    }
+                    ui.end_row();
+                    ui.label("monthly payment");
+                    if ui
+                        .text_edit_singleline(&mut self.payment.monthly_payment.0)
+                        .changed()
+                    {
+                        self.recompute_balance();
+                    }
+                    ui.end_row();
+                    ui.label("rebalance interval (months)");
+                    if ui
+                        .text_edit_singleline(&mut self.payment.rebalance_interval.0)
+                        .changed()
+                    {
+                        self.recompute_balance();
+                    }
+                    let nobalance = |ui: &mut Ui| {
+                        ui.label("final balance");
+                        ui.label("-");
+                        ui.end_row();
+                        ui.label("factor");
+                        ui.label("-");
+                    };
+                    ui.end_row();
+                    if let Some(tbom) = &self.charts.total_balance_over_month {
+                        if let Some(balance) = tbom.values.iter().last() {
+                            ui.label("final balance");
+                            ui.label(format!("{balance:0.2}"));
+                            ui.end_row();
+                            ui.label("factor");
+                            let total_yield = balance / self.payment.initial_balance.1;
+                            ui.label(format!("{total_yield:0.2}"));
+                        } else {
+                            nobalance(ui);
+                        }
+                    } else {
+                        nobalance(ui);
+                    }
+                    ui.end_row();
+                    if ui.button("add current chart").clicked() {
+                        self.charts.persist_tmp();
+                        self.recompute_balance();
+                    }
+                });
             let chart_inds = 0..(self.charts.persisted.len());
             let mut remove_idx = None;
             egui::Grid::new("grid-persistend-charts").show(ui, |ui| {
@@ -533,35 +594,18 @@ impl<'a> eframe::App for BalanceApp<'a> {
                 self.charts.remove(idx);
             }
 
-            if let Some(tbom) = &self.charts.total_balance_over_month {
-                if let Some(balance) = tbom.values.iter().last() {
-                    ui.label(format!("final balance {balance:0.2}"));
-                } else {
-                    ui.label("final balance -");
-                }
-            } else {
-                ui.label("final balance -");
-            }
-
             ui.horizontal(|ui| {
-                if ui.button("compute balance").clicked() {
-                    match self.payment.parse() {
-                        Ok((initial_balance, monthly_payments, rebalance_interval)) => {
-                            if let Err(e) = self.charts.compute_balance(
-                                initial_balance,
-                                monthly_payments,
-                                rebalance_interval,
-                            ) {
-                                self.status_msg = Some(format!("{e:?}"));
-                            }
-                        }
-                        Err(e) => {
-                            self.status_msg = Some(format!("{e:?}"));
-                        }
-                    }
+                if ui
+                    .selectable_label(self.charts.plot_balance, "balance plot")
+                    .clicked()
+                {
+                    self.charts.plot_balance = true;
                 }
-                if ui.button("toggle plots").clicked() {
-                    self.charts.plot_balance = !self.charts.plot_balance;
+                if ui
+                    .selectable_label(!self.charts.plot_balance, "charts plot")
+                    .clicked()
+                {
+                    self.charts.plot_balance = false;
                 }
             });
             self.plot(ui);
