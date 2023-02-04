@@ -1,7 +1,8 @@
-use egui::plot::{Corner, Legend, Line, PlotPoints, PlotUi};
+use egui::plot::{Corner, Legend, Line, PlotPoints};
 use egui::{Context, Ui};
 use std::fmt::Display;
 use std::mem;
+use std::ops::RangeInclusive;
 use std::sync::mpsc;
 use std::sync::mpsc::Sender;
 
@@ -126,6 +127,24 @@ impl SimInput {
         ))
     }
 }
+fn slice_by_date<'a, T>(
+    dates: &[usize],
+    start_date: usize,
+    end_date: usize,
+    to_be_sliced: &'a [T],
+) -> BlcResult<&'a [T]> {
+    let start_idx = dates
+        .iter()
+        .position(|d| d >= &start_date)
+        .ok_or_else(|| blcerr!("could not find start idx of {start_date}"))?;
+    let end_idx = dates
+        .iter()
+        .position(|d| d >= &end_date)
+        .ok_or_else(|| blcerr!("could not find end idx of {end_date}"))?
+        + 1;
+    Ok(&to_be_sliced[start_idx..end_idx])
+}
+
 #[derive(Default, Debug, Clone)]
 struct Chart {
     name: String,
@@ -145,13 +164,20 @@ impl Chart {
     }
     fn to_line(&self) -> Line {
         Line::new(
-            self.dates
+            self.values
                 .iter()
-                .zip(self.values.iter().enumerate())
-                .map(|(_, (i, v))| [i as f64, *v])
+                .enumerate()
+                .map(|(i, v)| [i as f64, *v])
                 .collect::<PlotPoints>(),
         )
         .name(self.name.clone())
+    }
+
+    fn sliced_values(&self, start_date: usize, end_date: usize) -> BlcResult<&[f64]> {
+        slice_by_date(&self.dates, start_date, end_date, &self.values)
+    }
+    fn sliced_dates(&self, start_date: usize, end_date: usize) -> BlcResult<&[usize]> {
+        slice_by_date(&self.dates, start_date, end_date, &self.dates)
     }
 }
 
@@ -195,6 +221,27 @@ impl Charts {
         self.fractions = new_fractions;
     }
 
+    /// Intersects all timelines of all persisted charts
+    fn start_end_date(&self) -> BlcResult<(usize, usize)> {
+        let start_date = *self
+            .persisted
+            .iter()
+            .map(|c| c.dates.first().unwrap_or(&usize::MAX))
+            .max()
+            .ok_or_else(|| blcerr!("no charts added"))?;
+        let end_date = *self
+            .persisted
+            .iter()
+            .map(|c| c.dates.iter().last().unwrap_or(&0))
+            .min()
+            .ok_or_else(|| blcerr!("no charts added"))?;
+        if end_date <= start_date {
+            Err(blcerr!("start date needs to be strictly before enddate"))
+        } else {
+            Ok((start_date, end_date))
+        }
+    }
+
     fn compute_balance(
         &mut self,
         initial_balance: f64,
@@ -203,73 +250,46 @@ impl Charts {
     ) -> BlcResult<()> {
         let mut lens = self.persisted.iter().map(|dev| dev.dates.len());
         let first_len = lens.next().ok_or_else(|| blcerr!("no charts added"))?;
-        let start_date = self
-            .persisted
-            .iter()
-            .map(|c| c.dates.first().unwrap_or(&usize::MAX))
-            .max()
-            .unwrap();
-        let end_date = self
-            .persisted
-            .iter()
-            .map(|c| c.dates.iter().last().unwrap_or(&0))
-            .min()
-            .unwrap();
-        if end_date <= start_date {
-            Err(blcerr!("start date needs to be strictly before enddate"))
-        } else {
-            let price_devs = self
-                .persisted
-                .iter()
-                .map(|c| {
-                    let start_idx = c.dates.iter().position(|d| d >= start_date).unwrap();
-                    let end_idx = c.dates.iter().position(|d| d >= end_date).unwrap() + 1;
-                    &c.values[start_idx..end_idx]
-                })
-                .collect::<Vec<_>>();
 
-            let initial_balances = self
-                .fractions
-                .iter()
-                .map(|fr| fr * initial_balance)
-                .collect::<Vec<_>>();
-            let monthly_payments = self
-                .fractions
-                .iter()
-                .map(|fr| vec![monthly_payments * *fr; first_len - 1])
-                .collect::<Vec<_>>();
-            let monthly_payments_refs = monthly_payments
-                .iter()
-                .map(|mp| &mp[..])
-                .collect::<Vec<_>>();
-            let balance_over_month = compute_balance_over_months(
-                &price_devs,
-                &initial_balances,
-                Some(&monthly_payments_refs),
-                rebalance_interval.map(|ri| RebalanceData {
-                    interval: ri,
-                    fractions: &self.fractions,
-                }),
-            )?;
-            let (balances, payments): (Vec<f64>, Vec<f64>) = balance_over_month.unzip();
-            let start_idx = self.persisted[0]
-                .dates
-                .iter()
-                .position(|d| d >= start_date)
-                .unwrap();
-            let end_idx = self.persisted[0]
-                .dates
-                .iter()
-                .position(|d| d >= end_date)
-                .unwrap()
-                + 1;
-            let dates = self.persisted[0].dates[start_idx..end_idx].to_vec();
-            let b_chart = Chart::new("total balances".to_string(), dates.clone(), balances);
-            let p_chart = Chart::new("total payments".to_string(), dates, payments);
-            self.total_balance_over_month = Some(b_chart);
-            self.total_payments_over_month = Some(p_chart);
-            Ok(())
-        }
+        let (start_date, end_date) = self.start_end_date()?;
+        let price_devs = self
+            .persisted
+            .iter()
+            .map(|c| c.sliced_values(start_date, end_date))
+            .collect::<BlcResult<Vec<_>>>()?;
+
+        let initial_balances = self
+            .fractions
+            .iter()
+            .map(|fr| fr * initial_balance)
+            .collect::<Vec<_>>();
+        let monthly_payments = self
+            .fractions
+            .iter()
+            .map(|fr| vec![monthly_payments * *fr; first_len - 1])
+            .collect::<Vec<_>>();
+        let monthly_payments_refs = monthly_payments
+            .iter()
+            .map(|mp| &mp[..])
+            .collect::<Vec<_>>();
+        let balance_over_month = compute_balance_over_months(
+            &price_devs,
+            &initial_balances,
+            Some(&monthly_payments_refs),
+            rebalance_interval.map(|ri| RebalanceData {
+                interval: ri,
+                fractions: &self.fractions,
+            }),
+        )?;
+        let (balances, payments): (Vec<f64>, Vec<f64>) = balance_over_month.unzip();
+        let dates = self.persisted[0]
+            .sliced_dates(start_date, end_date)?
+            .to_vec();
+        let b_chart = Chart::new("total balances".to_string(), dates.clone(), balances);
+        let p_chart = Chart::new("total payments".to_string(), dates, payments);
+        self.total_balance_over_month = Some(b_chart);
+        self.total_payments_over_month = Some(p_chart);
+        Ok(())
     }
 
     fn set_fractions(&mut self, fractions: Vec<f64>) {
@@ -280,21 +300,52 @@ impl Charts {
         self.fractions = fractions;
     }
 
-    fn plot(&self, ui: &mut PlotUi) {
-        if self.plot_balance {
+    fn plot(&self, ui: &mut Ui) -> BlcResult<()> {
+        let charts_to_plot = if self.plot_balance {
             if let (Some(balances), Some(payments)) = (
                 &self.total_balance_over_month,
                 &self.total_payments_over_month,
             ) {
-                ui.line(balances.to_line());
-                ui.line(payments.to_line());
+                vec![balances, payments]
+            } else {
+                vec![]
             }
         } else {
-            for c in &self.persisted {
-                ui.line(c.to_line())
+            let mut pref = self.persisted.iter().collect::<Vec<_>>();
+            pref.push(&self.tmp);
+            pref
+        };
+
+        let dates_clone = if let Some(tbom) = &self.total_balance_over_month {
+            tbom.dates.clone()
+        } else {
+            self.tmp.dates.clone()
+        };
+        let x_fmt_tbom = move |x: f64, _range: &RangeInclusive<f64>| {
+            if x.fract().abs() < 1e-6 {
+                let i = x.round() as usize;
+                if i < dates_clone.len() {
+                    let d = dates_clone[i];
+                    let year = d / 100;
+                    let month = d % 100;
+                    format!("{year:04}/{month:02}")
+                } else {
+                    String::new()
+                }
+            } else {
+                String::new()
             }
-            ui.line(self.tmp.to_line());
-        }
+        };
+        egui::plot::Plot::new("month vs price")
+            .legend(Legend::default().position(Corner::LeftTop))
+            .show_x(false)
+            .x_axis_formatter(x_fmt_tbom)
+            .show(ui, |plot_ui| {
+                for c in charts_to_plot {
+                    plot_ui.line(c.to_line())
+                }
+            });
+        Ok(())
     }
 }
 
@@ -317,10 +368,6 @@ impl PaymentData {
         self.initial_balance.1 = self.initial_balance.0.parse().map_err(to_blc)?;
         self.monthly_payment.1 = self.monthly_payment.0.parse().map_err(to_blc)?;
         self.rebalance_interval.1 = self.rebalance_interval.0.parse().ok();
-        println!(
-            "{:?} {:?} {:?}",
-            self.initial_balance, self.monthly_payment, self.rebalance_interval
-        );
         Ok(())
     }
 }
@@ -359,12 +406,10 @@ impl<'a> BalanceApp<'a> {
 
         Default::default()
     }
-    fn plot(&self, ui: &mut Ui) {
+    fn plot(&self, ui: &mut Ui) -> BlcResult<()> {
         //The central panel the region left after adding TopPanel's and SidePanel's
-        egui::plot::Plot::new("month vs price")
-            .legend(Legend::default().position(Corner::LeftTop))
-            .x_grid_spacer(|_| vec![])
-            .show(ui, |plot_ui| self.charts.plot(plot_ui));
+        self.charts.plot(ui)?;
+        Ok(())
     }
 
     fn check_download(&mut self) {
@@ -610,7 +655,11 @@ impl<'a> eframe::App for BalanceApp<'a> {
                     self.charts.plot_balance = false;
                 }
             });
-            self.plot(ui);
+            if let Err(e) = self.plot(ui) {
+                self.status_msg = Some(format!("{e:?}"));
+            } else {
+                self.status_msg = None;
+            }
 
             egui::warn_if_debug_build(ui);
         });
