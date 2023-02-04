@@ -364,7 +364,6 @@ impl<'a> BalanceApp<'a> {
         egui::plot::Plot::new("month vs price")
             .legend(Legend::default().position(Corner::LeftTop))
             .x_grid_spacer(|_| vec![])
-            .y_grid_spacer(|_| vec![])
             .show(ui, |plot_ui| self.charts.plot(plot_ui));
     }
 
