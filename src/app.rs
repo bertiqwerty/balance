@@ -70,7 +70,7 @@ impl SimInput {
             vola: Vola::Mi,
             expected_yearly_return: "7.0".to_string(),
             start_month: "1987/12".to_string(),
-            n_months: "180".to_string(),
+            n_months: "360".to_string(),
         }
     }
     fn parse(&self) -> BlcResult<(f64, f64, Date, usize)> {
@@ -156,6 +156,7 @@ impl<'a> BalanceApp<'a> {
             let tmp = match d {
                 Ok(resp) => {
                     let (dates, values) = read_csv_from_str(resp.text().unwrap()).unwrap();
+                    self.charts.plot_balance = false;
                     Chart::from_tuple(name.to_string(), (dates, values))
                 }
                 Err(e) => {

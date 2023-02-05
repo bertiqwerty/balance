@@ -16,11 +16,11 @@ fn start_end_date<'a>(charts: impl Iterator<Item = &'a Chart> + Clone) -> BlcRes
     let min_date = &Date::from_str("0001/01").unwrap();
     let start_date = *charts
         .clone()
-        .map(|c| c.dates.first().unwrap_or(max_date))
+        .map(|c| c.dates.first().unwrap_or(min_date))
         .max()
         .ok_or_else(|| blcerr!("no charts added"))?;
     let end_date = *charts
-        .map(|c| c.dates.iter().last().unwrap_or(min_date))
+        .map(|c| c.dates.iter().last().unwrap_or(max_date))
         .min()
         .ok_or_else(|| blcerr!("no charts added"))?;
     if end_date <= start_date {
@@ -358,9 +358,8 @@ impl Charts {
             .show(ui, |plot_ui| {
                 for c in charts_to_plot {
                     if let (Some(start), Some(end)) = (start_date, end_date) {
-                        match c.to_line(start, end, with_tmp) {
-                            Ok(line) => plot_ui.line(line),
-                            Err(e) => println!("could not print {} due to {e:?}", c.name()),
+                        if let Ok(line) = c.to_line(start, end, with_tmp) {
+                            plot_ui.line(line);
                         }
                     }
                 }
