@@ -1,23 +1,24 @@
-use std::error::Error;
+use crate::{
+    core_types::{to_blc, BlcResult},
+    date::Date,
+};
 
-pub fn read_csv_from_str(csv: &str) -> Result<(Vec<usize>, Vec<f64>), Box<dyn Error>> {
+pub fn read_csv_from_str(csv: &str) -> BlcResult<(Vec<Date>, Vec<f64>)> {
     let reader = csv::Reader::from_reader(csv.as_bytes());
     read_csv(reader)
 }
 
-fn read_csv<R>(mut reader: csv::Reader<R>) -> Result<(Vec<usize>, Vec<f64>), Box<dyn Error>>
+fn read_csv<R>(mut reader: csv::Reader<R>) -> BlcResult<(Vec<Date>, Vec<f64>)>
 where
     R: std::io::Read,
 {
-    let (dates, values): (Vec<usize>, Vec<f64>) = reader
+    let (dates, values): (Vec<Date>, Vec<f64>) = reader
         .records()
-        .flat_map(|record| -> Result<Option<(usize, f64)>, Box<dyn Error>> {
-            let record = record?;
+        .flat_map(|record| -> BlcResult<Option<(Date, f64)>> {
+            let record = record.map_err(to_blc)?;
             if let (Some(date), Some(val)) = (record.get(0), record.get(1)) {
-                let year: usize = date[..4].parse()?;
-                let month: usize = date[5..].parse()?;
-                let val: f64 = val.parse()?;
-                let date = year * 100 + month;
+                let val: f64 = val.parse().map_err(to_blc)?;
+                let date = Date::from_str(date)?;
                 Ok(Some((date, val)))
             } else {
                 Ok(None)
@@ -28,10 +29,12 @@ where
 
     // validate all months are there
     for (d1, d2) in dates.iter().zip(dates[1..].iter()) {
-        if d1 - (d1 / 100) * 100 == 12 {
-            assert_eq!(d2 - d1, 89);
+        if d1.month() == 12  {
+            assert_eq!(d2.month(), 1);
+            assert_eq!(d1.year() + 1, d2.year());
         } else {
-            assert_eq!(d2 - d1, 1);
+            assert_eq!(d2.month() - d1.month(), 1);
+            assert_eq!(d2.year() - d1.year(), 0);
         }
     }
     Ok((dates, values))
