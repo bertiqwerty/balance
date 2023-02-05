@@ -85,11 +85,11 @@ fn slice_by_date<'a, T>(
     let start_idx = dates
         .iter()
         .position(|d| d >= &start_date)
-        .ok_or_else(|| blcerr!("could not find start idx of {start_date}"))?;
+        .ok_or_else(|| blcerr!("slice by date - could not find start idx of {start_date}"))?;
     let end_idx = dates
         .iter()
         .position(|d| d >= &end_date)
-        .ok_or_else(|| blcerr!("could not find end idx of {end_date}"))?
+        .ok_or_else(|| blcerr!("slice by date - could not find end idx of {end_date}"))?
         + 1;
     Ok(&to_be_sliced[start_idx..end_idx])
 }
@@ -128,15 +128,15 @@ impl Chart {
         Self::new(name, dates, values)
     }
 
-    fn to_line(&self) -> Line {
-        Line::new(
-            self.values
-                .iter()
+    fn to_line(&self, start_date: Date, end_date: Date) -> BlcResult<Line> {
+        let sliced_values = self.sliced_values(start_date, end_date)?.iter();
+        Ok(Line::new(
+            sliced_values
                 .enumerate()
                 .map(|(i, v)| [i as f64, *v])
                 .collect::<PlotPoints>(),
         )
-        .name(self.name.clone())
+        .name(self.name.clone()))
     }
 
     fn sliced_values(&self, start_date: Date, end_date: Date) -> BlcResult<&[f64]> {
@@ -163,10 +163,14 @@ impl Charts {
         n_month_between_dates(start, end)
     }
 
-    pub fn dates(&self) -> BlcResult<Vec<Date>> {
-        let (start, end) = start_end_date(self.persisted.iter())?;
+    pub fn dates(&self, with_tmp: bool) -> BlcResult<Vec<Date>> {
+        let (start, end) = if with_tmp {
+            start_end_date(self.persisted.iter().chain(iter::once(&self.tmp)))?
+        } else {
+            start_end_date(self.persisted.iter())?
+        };
         Ok(iter::successors(Some(start), |d| {
-            if d <= &end {
+            if d < &end {
                 Some(d.next_month())
             } else {
                 None
@@ -274,7 +278,7 @@ impl Charts {
         }
     }
 
-    pub fn plot(&self, ui: &mut Ui) -> BlcResult<()> {
+    pub fn plot(&self, ui: &mut Ui, with_tmp: bool) -> BlcResult<()> {
         let charts_to_plot = if self.plot_balance {
             if let (Some(balances), Some(payments)) = (
                 &self.total_balance_over_month,
@@ -285,15 +289,15 @@ impl Charts {
                 vec![]
             }
         } else {
-            let mut pref = self.persisted.iter().collect::<Vec<_>>();
-            pref.push(&self.tmp);
-            pref
+            self.persisted.iter().chain(iter::once(&self.tmp)).collect()
         };
 
-        let dates = match self.dates() {
+        let dates = match self.dates(with_tmp) {
             Ok(dates) => dates,
             Err(_) => self.tmp.dates.clone(),
         };
+        let start_date = dates.first().copied();
+        let end_date = dates.last().copied();
         let x_fmt_tbom = move |x: f64, _range: &RangeInclusive<f64>| {
             if x.fract().abs() < 1e-6 {
                 let i = x.round() as usize;
@@ -312,7 +316,12 @@ impl Charts {
             .x_axis_formatter(x_fmt_tbom)
             .show(ui, |plot_ui| {
                 for c in charts_to_plot {
-                    plot_ui.line(c.to_line())
+                    if let (Some(start), Some(end)) = (start_date, end_date) {
+                        match c.to_line(start, end) {
+                            Ok(line) => plot_ui.line(line),
+                            Err(e) => println!("could not print {} due to {e:?}", c.name()),
+                        }
+                    }
                 }
             });
         Ok(())

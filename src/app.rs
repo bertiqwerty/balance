@@ -143,9 +143,9 @@ impl<'a> BalanceApp<'a> {
 
         Default::default()
     }
-    fn plot(&self, ui: &mut Ui) -> BlcResult<()> {
-        //The central panel the region left after adding TopPanel's and SidePanel's
-        self.charts.plot(ui)?;
+
+    fn plot(&self, ui: &mut Ui, with_tmp: bool) -> BlcResult<()> {
+        self.charts.plot(ui, with_tmp)?;
         Ok(())
     }
 
@@ -417,7 +417,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                     self.charts.plot_balance = false;
                 }
             });
-            if let Err(e) = self.plot(ui) {
+            if let Err(e) = self.plot(ui, !self.charts.plot_balance) {
                 self.status_msg = Some(format!("{e:?}"));
             }
             egui::warn_if_debug_build(ui);
