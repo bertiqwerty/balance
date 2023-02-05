@@ -1,6 +1,6 @@
 use crate::{
     blcerr,
-    compute::{compute_balance_over_months, RebalanceData},
+    compute::{adapt_pricedev_to_initial_balance, compute_balance_over_months, RebalanceData},
     core_types::BlcResult,
     date::{n_month_between_dates, Date},
 };
@@ -128,15 +128,21 @@ impl Chart {
         Self::new(name, dates, values)
     }
 
-    fn to_line(&self, start_date: Date, end_date: Date) -> BlcResult<Line> {
-        let sliced_values = self.sliced_values(start_date, end_date)?.iter();
-        Ok(Line::new(
+    fn to_line(&self, start_date: Date, end_date: Date, start_with_1: bool) -> BlcResult<Line> {
+        let sliced_values = self.sliced_values(start_date, end_date)?;
+        let line = if start_with_1 {
+            adapt_pricedev_to_initial_balance(1.0, sliced_values)
+                .enumerate()
+                .map(|(i, v)| [i as f64, v])
+                .collect::<PlotPoints>()
+        } else {
             sliced_values
+                .iter()
                 .enumerate()
                 .map(|(i, v)| [i as f64, *v])
-                .collect::<PlotPoints>(),
-        )
-        .name(self.name.clone()))
+                .collect::<PlotPoints>()
+        };
+        Ok(Line::new(line).name(self.name.clone()))
     }
 
     fn sliced_values(&self, start_date: Date, end_date: Date) -> BlcResult<&[f64]> {
@@ -156,19 +162,54 @@ pub struct Charts {
     total_balance_over_month: Option<Chart>,
     total_payments_over_month: Option<Chart>,
     pub plot_balance: bool,
+    pub user_start_str: String,
+    pub user_end_str: String,
+    user_start: Option<Date>,
+    user_end: Option<Date>,
 }
 impl Charts {
     pub fn n_months_persisted(&self) -> BlcResult<usize> {
-        let (start, end) = start_end_date(self.persisted.iter())?;
+        let (start, end) = self.start_end_date(false)?;
         n_month_between_dates(start, end)
     }
 
-    pub fn dates(&self, with_tmp: bool) -> BlcResult<Vec<Date>> {
+    pub fn update_user_start(&mut self) -> bool {
+        if let Ok(start) = Date::from_str(&self.user_start_str) {
+            self.user_start = Some(start);
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn update_user_end(&mut self) -> bool {
+        if let Ok(end) = Date::from_str(&self.user_end_str) {
+            self.user_end = Some(end);
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn start_end_date(&self, with_tmp: bool) -> BlcResult<(Date, Date)> {
         let (start, end) = if with_tmp {
             start_end_date(self.persisted.iter().chain(iter::once(&self.tmp)))?
         } else {
             start_end_date(self.persisted.iter())?
         };
+        let start = match self.user_start {
+            Some(us) => us,
+            _ => start,
+        };
+        let end = match self.user_end {
+            Some(ue) => ue,
+            _ => end,
+        };
+        Ok((start, end))
+    }
+
+    pub fn dates(&self, with_tmp: bool) -> BlcResult<Vec<Date>> {
+        let (start, end) = self.start_end_date(with_tmp)?;
         Ok(iter::successors(Some(start), |d| {
             if d < &end {
                 Some(d.next_month())
@@ -231,7 +272,7 @@ impl Charts {
         let mut lens = self.persisted.iter().map(|dev| dev.dates.len());
         let first_len = lens.next().ok_or_else(|| blcerr!("no charts added"))?;
 
-        let (start_date, end_date) = start_end_date(self.persisted.iter())?;
+        let (start_date, end_date) = self.start_end_date(false)?;
         let price_devs = self
             .persisted
             .iter()
@@ -317,7 +358,7 @@ impl Charts {
             .show(ui, |plot_ui| {
                 for c in charts_to_plot {
                     if let (Some(start), Some(end)) = (start_date, end_date) {
-                        match c.to_line(start, end) {
+                        match c.to_line(start, end, with_tmp) {
                             Ok(line) => plot_ui.line(line),
                             Err(e) => println!("could not print {} due to {e:?}", c.name()),
                         }

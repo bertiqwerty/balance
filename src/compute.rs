@@ -76,7 +76,7 @@ pub fn compute_balance_over_months<'a>(
 }
 
 #[allow(clippy::needless_lifetimes)]
-pub fn _adapt_pricedev_to_initial_balance<'a>(
+pub fn adapt_pricedev_to_initial_balance<'a>(
     initial_balance: f64,
     price_dev: &'a [f64],
 ) -> impl Iterator<Item = f64> + 'a {
@@ -175,7 +175,7 @@ fn compute_total_balance(
 fn test_adapt() {
     let price_dev = vec![3.0, 6.0, 12.0, 6.0];
     let price_ref = vec![10.0, 20.0, 40.0, 20.0];
-    let adapted = _adapt_pricedev_to_initial_balance(10.0, &price_dev);
+    let adapted = adapt_pricedev_to_initial_balance(10.0, &price_dev);
     for (a, p) in adapted.zip(price_ref.iter()) {
         assert!((a - p) < 1e-12);
     }

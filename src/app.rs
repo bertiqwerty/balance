@@ -4,7 +4,7 @@ use std::sync::mpsc;
 use std::sync::mpsc::Sender;
 
 use crate::charts::{Chart, Charts};
-use crate::compute::{_adapt_pricedev_to_initial_balance, random_walk};
+use crate::compute::random_walk;
 use crate::core_types::{to_blc, BlcResult};
 use crate::date::{date_after_nmonths, Date};
 use crate::io::read_csv_from_str;
@@ -59,7 +59,6 @@ fn trigger_dl(url: &str, rx: Sender<ehttp::Result<ehttp::Response>>, ctx: Contex
 }
 
 struct SimInput {
-    start_value: String,
     vola: Vola,
     expected_yearly_return: String,
     start_month: String,
@@ -68,16 +67,14 @@ struct SimInput {
 impl SimInput {
     fn new() -> Self {
         SimInput {
-            start_value: "1.0".to_string(),
             vola: Vola::Mi,
             expected_yearly_return: "7.0".to_string(),
             start_month: "1987/12".to_string(),
             n_months: "180".to_string(),
         }
     }
-    fn parse(&self) -> BlcResult<(f64, f64, f64, Date, usize)> {
+    fn parse(&self) -> BlcResult<(f64, f64, Date, usize)> {
         Ok((
-            self.start_value.parse().map_err(to_blc)?,
             self.vola.to_float(),
             self.expected_yearly_return.parse().map_err(to_blc)?,
             Date::from_str(&self.start_month)?,
@@ -142,11 +139,6 @@ impl<'a> BalanceApp<'a> {
         // `cc.egui_ctx.set_visuals` and `cc.egui_ctx.set_fonts`.
 
         Default::default()
-    }
-
-    fn plot(&self, ui: &mut Ui, with_tmp: bool) -> BlcResult<()> {
-        self.charts.plot(ui, with_tmp)?;
-        Ok(())
     }
 
     fn check_download(&mut self) {
@@ -223,8 +215,6 @@ impl<'a> eframe::App for BalanceApp<'a> {
             egui::Grid::new("simulate-inputs")
                 .num_columns(2)
                 .show(ui, |ui| {
-                    ui.label("start value");
-                    ui.text_edit_singleline(&mut self.sim.start_value);
                     ui.end_row();
                     ui.label("expected yearly return [%]");
                     ui.text_edit_singleline(&mut self.sim.expected_yearly_return);
@@ -232,7 +222,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                     ui.label("#months");
                     ui.text_edit_singleline(&mut self.sim.n_months);
                     ui.end_row();
-                    ui.label("start month (YYYY/MM)");
+                    ui.label("start date (YYYY/MM)");
                     ui.text_edit_singleline(&mut self.sim.start_month);
                 });
             ui.horizontal(|ui| {
@@ -247,13 +237,9 @@ impl<'a> eframe::App for BalanceApp<'a> {
                 if ui.button("simulate").clicked() {
                     match self.sim.parse() {
                         Ok(data) => {
-                            let (start_value, noise, expected_yearly_return, start_date, n_months) =
-                                data;
+                            let (noise, expected_yearly_return, start_date, n_months) = data;
                             match random_walk(expected_yearly_return, noise, n_months) {
                                 Ok(values) => {
-                                    let values =
-                                        _adapt_pricedev_to_initial_balance(start_value, &values)
-                                            .collect::<Vec<_>>();
                                     let tmp = Chart::new(
                                         format!(
                                             "{}_{}_{}",
@@ -332,6 +318,24 @@ impl<'a> eframe::App for BalanceApp<'a> {
                     if ui
                         .text_edit_singleline(&mut self.payment.monthly_payment.0)
                         .changed()
+                    {
+                        self.recompute_balance();
+                    }
+                    ui.end_row();
+                    ui.label("start date (YYYY/MM)");
+                    if ui
+                        .text_edit_singleline(&mut self.charts.user_start_str)
+                        .changed()
+                        && self.charts.update_user_start()
+                    {
+                        self.recompute_balance();
+                    }
+                    ui.end_row();
+                    ui.label("end date (YYYY/MM)");
+                    if ui
+                        .text_edit_singleline(&mut self.charts.user_end_str)
+                        .changed()
+                        && self.charts.update_user_end()
                     {
                         self.recompute_balance();
                     }
@@ -417,7 +421,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                     self.charts.plot_balance = false;
                 }
             });
-            if let Err(e) = self.plot(ui, !self.charts.plot_balance) {
+            if let Err(e) = self.charts.plot(ui, !self.charts.plot_balance) {
                 self.status_msg = Some(format!("{e:?}"));
             }
             egui::warn_if_debug_build(ui);
