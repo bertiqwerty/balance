@@ -67,12 +67,6 @@ impl Date {
         self.date % 100
     }
 
-    pub fn to_string(&self) -> String {
-        let year = self.year();
-        let month = self.month();
-        format!("{year:04}/{month:02}")
-    }
-
     pub fn next_month(&self) -> Date {
         if self.month() == 12 {
             Date::new(self.year() + 1, 1).unwrap()
@@ -83,7 +77,10 @@ impl Date {
 }
 impl Display for Date {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Display::fmt(&self.date, f)
+        let year = self.year();
+        let month = self.month();
+        let s = format!("{year:04}/{month:02}");
+        f.write_str(&s)
     }
 }
 
@@ -139,12 +136,19 @@ fn test_year_month() {
     assert!(Date::from_str("1999/1").is_err());
 }
 
-
 #[test]
 fn test_nextmonth() {
     fn test(year: usize, month: usize, reference: usize) {
-        assert_eq!(Date::new(year, month).unwrap().next_month(), Date { date: reference });
+        assert_eq!(
+            Date::new(year, month).unwrap().next_month(),
+            Date { date: reference }
+        );
     }
     test(2022, 12, 202301);
     test(2022, 1, 202202);
+}
+
+#[test]
+fn test_tostring() {
+    assert_eq!(&Date::from_str("1988/12").unwrap().to_string(), "1988/12")
 }

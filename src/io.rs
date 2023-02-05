@@ -29,7 +29,7 @@ where
 
     // validate all months are there
     for (d1, d2) in dates.iter().zip(dates[1..].iter()) {
-        if d1.month() == 12  {
+        if d1.month() == 12 {
             assert_eq!(d2.month(), 1);
             assert_eq!(d1.year() + 1, d2.year());
         } else {

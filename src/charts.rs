@@ -1,15 +1,14 @@
 use crate::{
     blcerr,
     compute::{compute_balance_over_months, RebalanceData},
-    core_types::{ BlcResult }, date::{Date, n_month_between_dates},
+    core_types::BlcResult,
+    date::{n_month_between_dates, Date},
 };
 use egui::{
     plot::{Corner, Legend, Line, PlotPoints},
     Ui,
 };
-use std::{mem, ops::RangeInclusive, iter};
-
-
+use std::{iter, mem, ops::RangeInclusive};
 
 /// Intersects all timelines of all persisted charts
 fn start_end_date<'a>(charts: impl Iterator<Item = &'a Chart> + Clone) -> BlcResult<(Date, Date)> {
@@ -17,16 +16,11 @@ fn start_end_date<'a>(charts: impl Iterator<Item = &'a Chart> + Clone) -> BlcRes
     let min_date = &Date::from_str("0001/01").unwrap();
     let start_date = *charts
         .clone()
-        .map(|c| c.dates.first().unwrap_or(&max_date))
+        .map(|c| c.dates.first().unwrap_or(max_date))
         .max()
         .ok_or_else(|| blcerr!("no charts added"))?;
     let end_date = *charts
-        .map(|c| {
-            c.dates
-                .iter()
-                .last()
-                .unwrap_or(&min_date)
-        })
+        .map(|c| c.dates.iter().last().unwrap_or(min_date))
         .min()
         .ok_or_else(|| blcerr!("no charts added"))?;
     if end_date <= start_date {
@@ -171,11 +165,14 @@ impl Charts {
 
     pub fn dates(&self) -> BlcResult<Vec<Date>> {
         let (start, end) = start_end_date(self.persisted.iter())?;
-        Ok(iter::successors(Some(start), |d| if d <= &end {
-            Some(d.next_month())
-        } else {
-            None
-        }).collect())
+        Ok(iter::successors(Some(start), |d| {
+            if d <= &end {
+                Some(d.next_month())
+            } else {
+                None
+            }
+        })
+        .collect())
     }
 
     pub fn total_balance_over_month(&self) -> Option<&Chart> {
