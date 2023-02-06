@@ -278,8 +278,8 @@ fn test_compound() {
 
 #[test]
 fn test_rebalance() {
-    let v1s = vec![1.0, 1.0, -1.0];
-    let v2s = vec![1.0, -1.0, 1.0];
+    let v1s = vec![1.0, 1.0, 0.0];
+    let v2s = vec![1.0, 1.0, 1.0];
     let (x, _): (Vec<_>, Vec<_>) = compute_balance_over_months(
         &[&v1s, &v2s],
         &[0.5, 0.5],
@@ -291,7 +291,5 @@ fn test_rebalance() {
     )
     .unwrap()
     .unzip();
-    println!("{:?}", x);
-    assert!(false);
-    // assert!((x - 0.16).abs() < 1e-12);
+    assert!((x[2] - 0.5).abs() < 1e-12);
 }

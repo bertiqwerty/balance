@@ -64,7 +64,7 @@ struct SimInput {
 impl SimInput {
     fn new() -> Self {
         SimInput {
-            vola: Vola::Hi,
+            vola: Vola::Mi,
             expected_yearly_return: "7.0".to_string(),
             start_month: "1987/12".to_string(),
             n_months: "360".to_string(),
@@ -213,7 +213,6 @@ impl<'a> eframe::App for BalanceApp<'a> {
             egui::Grid::new("simulate-inputs")
                 .num_columns(2)
                 .show(ui, |ui| {
-                    ui.end_row();
                     ui.label("expected yearly return [%]");
                     ui.text_edit_singleline(&mut self.sim.expected_yearly_return);
                     ui.end_row();
