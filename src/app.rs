@@ -19,7 +19,6 @@ enum Download<'a> {
 #[derive(PartialEq, Clone)]
 enum Vola {
     No,
-    VryLo,
     Lo,
     Mi,
     Hi,
@@ -28,10 +27,9 @@ impl Vola {
     fn to_float(&self) -> f64 {
         match self {
             Vola::No => 0.0,
-            Vola::VryLo => 0.01,
-            Vola::Lo => 0.05,
-            Vola::Mi => 0.1,
-            Vola::Hi => 0.2,
+            Vola::Lo => 0.005,
+            Vola::Mi => 0.01,
+            Vola::Hi => 0.02,
         }
     }
 }
@@ -39,7 +37,6 @@ impl Display for Vola {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Vola::No => f.write_str("no"),
-            Vola::VryLo => f.write_str("very low"),
             Vola::Lo => f.write_str("low"),
             Vola::Mi => f.write_str("mid"),
             Vola::Hi => f.write_str("high"),
@@ -67,7 +64,7 @@ struct SimInput {
 impl SimInput {
     fn new() -> Self {
         SimInput {
-            vola: Vola::Mi,
+            vola: Vola::Hi,
             expected_yearly_return: "7.0".to_string(),
             start_month: "1987/12".to_string(),
             n_months: "360".to_string(),
@@ -229,7 +226,6 @@ impl<'a> eframe::App for BalanceApp<'a> {
             ui.horizontal(|ui| {
                 ui.label("vola");
                 ui.radio_value(&mut self.sim.vola, Vola::No, format!("{}", Vola::No));
-                ui.radio_value(&mut self.sim.vola, Vola::VryLo, format!("{}", Vola::VryLo));
                 ui.radio_value(&mut self.sim.vola, Vola::Lo, format!("{}", Vola::Lo));
                 ui.radio_value(&mut self.sim.vola, Vola::Mi, format!("{}", Vola::Mi));
                 ui.radio_value(&mut self.sim.vola, Vola::Hi, format!("{}", Vola::Hi));

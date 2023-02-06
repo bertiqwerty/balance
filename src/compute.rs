@@ -48,9 +48,11 @@ pub fn compute_balance_over_months<'a>(
                 let payment_this_month = monthly_payments
                     .map(|mp| mp[i_sec][i_month - 1])
                     .unwrap_or(0.0);
-                let price_update =
-                    balances[i_sec] * price_devs[i_sec][i_month] / price_devs[i_sec][i_prev_month];
-                balances[i_sec] = payment_this_month + price_update;
+                // we assume the monthly payment at the beggining of the month
+                let price_update = (payment_this_month + balances[i_sec])
+                    * price_devs[i_sec][i_month]
+                    / price_devs[i_sec][i_prev_month];
+                balances[i_sec] = price_update;
                 *monthly_payments_upto_now += payment_this_month;
             }
 
@@ -120,19 +122,9 @@ pub fn random_walk(
     let sigma_distribution = Normal::new(sigma_mean, sigma_mean).map_err(to_blc)?;
     let mut last_sigmas = [sigma_mean; SIGMA_WINDOW_SIZE];
     let mut rv_rng = StdRng::seed_from_u64(unix_to_now_nanos()?);
-    let mut price = 1.0;
-    let mut res = vec![price; n_months + 1];
+    let start_price = 1.0;
+    let mut res = vec![start_price; n_months + 1];
 
-    let mu_price_pair = |price, i_month| {
-        if (i_month) % 12 == 0 {
-            (
-                price * expected_yearly_return / 1200.0,
-                price * (1.0 + expected_yearly_return / 100.0),
-            )
-        } else {
-            (price * expected_yearly_return / 1200.0, price)
-        }
-    };
     for (i, sigma) in (1..(n_months + 1)).zip(sigma_distribution.sample_iter(&mut sigma_rng)) {
         for i in 0..9 {
             last_sigmas[i] = last_sigmas[i + 1];
@@ -140,12 +132,10 @@ pub fn random_walk(
         last_sigmas[9] = sigma;
         last_sigmas.sort_by(|a, b| a.partial_cmp(b).unwrap());
         let sigma = last_sigmas[SIGMA_WINDOW_SIZE / 2].abs();
-        let mpp = mu_price_pair(price, i);
-        let mu = mpp.0;
-        price = mpp.1;
+        let mu = (1.0 + expected_yearly_return / 100.0).powf(1.0 / 12.0);
         let d = Normal::new(mu, sigma).map_err(to_blc)?;
         let rv = d.sample(&mut rv_rng);
-        res[i] = res[i - 1] + rv;
+        res[i] = (res[i - 1] * rv).max(1e-1);
     }
     Ok(res)
 }
@@ -182,7 +172,7 @@ fn test_adapt() {
 }
 
 #[test]
-fn test_rebalance() {
+fn test_compute_balance() {
     let rebalance_interval = 5;
     let world_vals = iter::repeat(1.0)
         .take(rebalance_interval)
@@ -264,16 +254,44 @@ fn test_rebalance() {
     );
     assert!((x - 1.1).abs() < 1e-12);
     assert!((p - 1.0).abs() < 1e-12);
+}
 
+#[test]
+fn test_compound() {
     let compound_interest: Vec<f64> = random_walk(5.0, 0.0, 240).unwrap();
+    let (b, p) = compute_total_balance(&[&compound_interest], &[10000.0], None, None);
+    assert!((b - 26532.98).abs() < 1e-2);
+    assert!((p - 10000.0).abs() < 1e-12);
+
+    let compound_interest: Vec<f64> = random_walk(5.0, 0.0, 360).unwrap();
     let ci_len = compound_interest.len();
     let monthly_payments: Vec<f64> = vec![1000.0; ci_len - 1];
-    let (b, p) = compute_total_balance(
+    let (b, _) = compute_total_balance(
         &[&compound_interest],
         &[10000.0],
         Some(&[&monthly_payments]),
         None,
     );
-    assert!((b - 432257.37).abs() < 1e-2);
-    assert!((p - 250000.0).abs() < 1e-12);
+    println!("{b}");
+    assert!((b - 861917.27).abs() < 1e-2);
+}
+
+#[test]
+fn test_rebalance() {
+    let v1s = vec![1.0, 1.0, -1.0];
+    let v2s = vec![1.0, -1.0, 1.0];
+    let (x, _): (Vec<_>, Vec<_>) = compute_balance_over_months(
+        &[&v1s, &v2s],
+        &[0.5, 0.5],
+        None,
+        Some(RebalanceData {
+            interval: 1,
+            fractions: &[0.5, 0.5],
+        }),
+    )
+    .unwrap()
+    .unzip();
+    println!("{:?}", x);
+    assert!(false);
+    // assert!((x - 0.16).abs() < 1e-12);
 }
