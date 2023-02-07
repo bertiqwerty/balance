@@ -2,7 +2,8 @@ use crate::{
     blcerr,
     compute::{adapt_pricedev_to_initial_balance, compute_balance_over_months, RebalanceData},
     core_types::BlcResult,
-    date::{n_month_between_dates, Date},
+    date::{fill_between, n_month_between_dates, Date},
+    month_slider::{MonthSlider, SliderState},
 };
 use egui::{
     plot::{Corner, Legend, Line, PlotPoints},
@@ -162,33 +163,48 @@ pub struct Charts {
     total_balance_over_month: Option<Chart>,
     total_payments_over_month: Option<Chart>,
     pub plot_balance: bool,
-    pub user_start_str: String,
-    pub user_end_str: String,
-    user_start: Option<Date>,
-    user_end: Option<Date>,
+    pub user_start: MonthSlider,
+    pub user_end: MonthSlider,
 }
 impl Charts {
+    pub fn update_start_end_sliders(&mut self) {
+        if let Ok((start, end)) = start_end_date(self.persisted.iter().chain(iter::once(&self.tmp)))
+        {
+            self.user_start = MonthSlider::new(start, end, SliderState::First);
+            self.user_end = MonthSlider::new(start, end, SliderState::Last);
+        }
+    }
+
+    pub fn start_slider(&mut self, ui: &mut Ui) -> bool {
+        let contained = self.user_start.month_slider(ui, "restrict start");
+
+        if self.user_start.is_at_end() {
+            self.user_start.move_left();
+        }
+        while self.user_start.is_initialized()
+            && self.user_end.selected_date() <= self.user_start.selected_date()
+        {
+            self.user_end.move_right();
+        }
+        contained
+    }
+    pub fn end_slider(&mut self, ui: &mut Ui) -> bool {
+        let contained = self.user_end.month_slider(ui, "restrict end");
+
+        if self.user_end.is_at_start() {
+            self.user_end.move_right();
+        }
+        while self.user_end.is_initialized()
+            && self.user_end.selected_date() <= self.user_start.selected_date()
+        {
+            self.user_start.move_left();
+        }
+        contained
+    }
+
     pub fn n_months_persisted(&self) -> BlcResult<usize> {
         let (start, end) = self.start_end_date(false)?;
         n_month_between_dates(start, end)
-    }
-
-    pub fn update_user_start(&mut self) -> bool {
-        if let Ok(start) = Date::from_str(&self.user_start_str) {
-            self.user_start = Some(start);
-            true
-        } else {
-            false
-        }
-    }
-
-    pub fn update_user_end(&mut self) -> bool {
-        if let Ok(end) = Date::from_str(&self.user_end_str) {
-            self.user_end = Some(end);
-            true
-        } else {
-            false
-        }
     }
 
     pub fn start_end_date(&self, with_tmp: bool) -> BlcResult<(Date, Date)> {
@@ -197,27 +213,26 @@ impl Charts {
         } else {
             start_end_date(self.persisted.iter())?
         };
-        let start = match self.user_start {
-            Some(us) => us,
-            _ => start,
+        let start = if let Some(user_start) = self.user_start.selected_date() {
+            user_start
+        } else {
+            start
         };
-        let end = match self.user_end {
-            Some(ue) => ue,
-            _ => end,
+        let end = if let Some(user_end) = self.user_end.selected_date() {
+            user_end
+        } else {
+            end
         };
-        Ok((start, end))
+        if start >= end {
+            Err(blcerr!("start needs to be before end"))
+        } else {
+            Ok((start, end))
+        }
     }
 
     pub fn dates(&self, with_tmp: bool) -> BlcResult<Vec<Date>> {
         let (start, end) = self.start_end_date(with_tmp)?;
-        Ok(iter::successors(Some(start), |d| {
-            if d < &end {
-                Some(d.next_month())
-            } else {
-                None
-            }
-        })
-        .collect())
+        Ok(fill_between(start, end))
     }
 
     pub fn total_balance_over_month(&self) -> Option<&Chart> {
@@ -227,6 +242,7 @@ impl Charts {
     pub fn add_tmp(&mut self, mut chart: Chart) {
         chart.name = self.adapt_name(mem::take(&mut chart.name));
         self.tmp = chart;
+        self.update_start_end_sliders()
     }
 
     pub fn move_tmp(&mut self) -> Chart {

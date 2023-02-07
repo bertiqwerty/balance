@@ -1,4 +1,5 @@
 use std::fmt::Display;
+use std::iter;
 
 use crate::{
     blcerr,
@@ -32,6 +33,16 @@ pub fn date_after_nmonths(t0: Date, n_months: usize) -> Date {
     Date::new(new_year, new_month).unwrap()
 }
 
+pub fn fill_between(start: Date, end: Date) -> Vec<Date> {
+    iter::successors(Some(start), |d| {
+        if d < &end {
+            Some(d.next_month())
+        } else {
+            None
+        }
+    })
+    .collect()
+}
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Date {
     date: usize,

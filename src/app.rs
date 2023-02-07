@@ -3,11 +3,13 @@ use std::fmt::Display;
 use std::sync::mpsc;
 use std::sync::mpsc::Sender;
 
+use crate::blcerr;
 use crate::charts::{Chart, Charts};
 use crate::compute::random_walk;
 use crate::core_types::{to_blc, BlcResult};
 use crate::date::{date_after_nmonths, Date};
 use crate::io::read_csv_from_str;
+use crate::month_slider::{MonthSlider, SliderState};
 
 #[derive(Debug)]
 enum Download<'a> {
@@ -58,7 +60,7 @@ fn trigger_dl(url: &str, rx: Sender<ehttp::Result<ehttp::Response>>, ctx: Contex
 struct SimInput {
     vola: Vola,
     expected_yearly_return: String,
-    start_month: String,
+    start_month_slider: MonthSlider,
     n_months: String,
 }
 impl SimInput {
@@ -66,15 +68,21 @@ impl SimInput {
         SimInput {
             vola: Vola::Mi,
             expected_yearly_return: "7.0".to_string(),
-            start_month: "1987/12".to_string(),
             n_months: "360".to_string(),
+            start_month_slider: MonthSlider::new(
+                Date::new(1950, 1).unwrap(),
+                Date::new(2022, 12).unwrap(),
+                SliderState::Some(346),
+            ),
         }
     }
     fn parse(&self) -> BlcResult<(f64, f64, Date, usize)> {
         Ok((
             self.vola.to_float(),
             self.expected_yearly_return.parse().map_err(to_blc)?,
-            Date::from_str(&self.start_month)?,
+            self.start_month_slider
+                .selected_date()
+                .ok_or_else(|| blcerr!("no date selected"))?,
             self.n_months.parse().map_err(to_blc)?,
         ))
     }
@@ -219,8 +227,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                     ui.label("#months");
                     ui.text_edit_singleline(&mut self.sim.n_months);
                     ui.end_row();
-                    ui.label("start date (YYYY/MM)");
-                    ui.text_edit_singleline(&mut self.sim.start_month);
+                    self.sim.start_month_slider.month_slider(ui, "start date");
                 });
             ui.horizontal(|ui| {
                 ui.label("vola");
@@ -318,21 +325,11 @@ impl<'a> eframe::App for BalanceApp<'a> {
                         self.recompute_balance();
                     }
                     ui.end_row();
-                    ui.label("start date (YYYY/MM)");
-                    if ui
-                        .text_edit_singleline(&mut self.charts.user_start_str)
-                        .changed()
-                        && self.charts.update_user_start()
-                    {
+                    if self.charts.start_slider(ui) {
                         self.recompute_balance();
                     }
                     ui.end_row();
-                    ui.label("end date (YYYY/MM)");
-                    if ui
-                        .text_edit_singleline(&mut self.charts.user_end_str)
-                        .changed()
-                        && self.charts.update_user_end()
-                    {
+                    if self.charts.end_slider(ui) {
                         self.recompute_balance();
                     }
                     ui.end_row();

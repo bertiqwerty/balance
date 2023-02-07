@@ -6,4 +6,5 @@ mod compute;
 mod core_types;
 mod date;
 mod io;
+mod month_slider;
 pub use app::BalanceApp;
