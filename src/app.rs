@@ -217,6 +217,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
+            ui.heading("Create chart");
             egui::CollapsingHeader::new("Simulate").show(ui, |ui| {
                 egui::Grid::new("simulate-inputs")
                     .num_columns(2)
@@ -289,18 +290,18 @@ impl<'a> eframe::App for BalanceApp<'a> {
             ui.separator();
             if let Some(status_msg) = &self.status_msg {
                 ui.label(status_msg);
+            } else if self.charts.persisted.is_empty() {
+                ui.label("add simulated or backtested charts to compute balances");
             } else {
-                if self.charts.persisted.is_empty() {
-                    ui.label("add simulated or backtested charts to compute balances");
-                } else {
-                    ui.label("ready");
-                }
+                ui.label("ready");
             }
+
             if ui.button("add current chart to balance").clicked() {
                 self.charts.persist_tmp();
                 self.recompute_balance();
             }
             ui.separator();
+            ui.heading("Compute balance");
             egui::Grid::new("inputs-balance-payments-interval")
                 .num_columns(2)
                 .show(ui, |ui| {
@@ -317,14 +318,6 @@ impl<'a> eframe::App for BalanceApp<'a> {
                         .text_edit_singleline(&mut self.payment.monthly_payment.0)
                         .changed()
                     {
-                        self.recompute_balance();
-                    }
-                    ui.end_row();
-                    if self.charts.start_slider(ui) {
-                        self.recompute_balance();
-                    }
-                    ui.end_row();
-                    if self.charts.end_slider(ui) {
                         self.recompute_balance();
                     }
                     ui.end_row();
@@ -374,6 +367,17 @@ impl<'a> eframe::App for BalanceApp<'a> {
             if !self.charts.persisted.is_empty() {
                 ui.separator();
             }
+            egui::CollapsingHeader::new("restrict timeline").show(ui, |ui| {
+                egui::Grid::new("restriction-of-timeline").show(ui, |ui| {
+                    if self.charts.start_slider(ui) {
+                        self.recompute_balance();
+                    }
+                    ui.end_row();
+                    if self.charts.end_slider(ui) {
+                        self.recompute_balance();
+                    }
+                });
+            });
             egui::Grid::new("grid-persistend-charts").show(ui, |ui| {
                 for idx in chart_inds {
                     ui.label(self.charts.persisted[idx].name());
