@@ -381,12 +381,10 @@ impl<'a> eframe::App for BalanceApp<'a> {
             egui::Grid::new("grid-persistend-charts").show(ui, |ui| {
                 for idx in chart_inds {
                     ui.label(self.charts.persisted[idx].name());
-                    if ui
-                        .text_edit_singleline(&mut self.charts.fraction_strings[idx])
-                        .changed()
-                    {
-                        self.charts.update_fractions(idx);
+                    if self.charts.update_fractions(ui, idx) {
+                        self.recompute_balance();
                     }
+
                     if ui.button("x").clicked() {
                         remove_idx = Some(idx);
                     }

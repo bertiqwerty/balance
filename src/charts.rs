@@ -52,7 +52,77 @@ fn sorted_indices(v: &[f64]) -> Vec<usize> {
     inds
 }
 
+fn clamp_01(x: f64) -> (f64, f64) {
+    if x > 1.0 {
+        (1.0, x - 1.0)
+    } else if x < 0.0 {
+        (0.0, x)
+    } else {
+        (x, 0.0)
+    }
+}
+
 fn normalize_fractions(mut fractions: Vec<f64>, pivot_idx: usize) -> Vec<f64> {
+    if fractions.len() == 1 {
+        fractions[pivot_idx] = 1.0;
+        fractions
+    } else if fractions.is_empty() {
+        fractions
+    } else {
+        fractions[pivot_idx] = if fractions[pivot_idx] > 1.0 {
+            1.0
+        } else if fractions[pivot_idx] < 0.0 {
+            0.0
+        } else {
+            fractions[pivot_idx]
+        };
+        let non_pivot_sum: f64 = fractions
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| *i != pivot_idx)
+            .map(|(_, x)| x)
+            .sum();
+        let to_be_distributed_per_fr =
+            (1.0 - fractions[pivot_idx] - non_pivot_sum) / (fractions.len() - 1) as f64;
+
+        fn update<'a, I: Iterator<Item = &'a usize>>(
+            it: I,
+            pivot_idx: usize,
+            fractions: &mut [f64],
+            to_be_distributed_per_fr: f64,
+        ) {
+            let mut rest = 0.0;
+            for i in it.filter(|i| **i != pivot_idx) {
+                fractions[*i] += to_be_distributed_per_fr + rest;
+                let (clamped, rest_) = clamp_01(fractions[*i]);
+                fractions[*i] = clamped;
+                rest += rest_;
+            }
+        }
+
+        if to_be_distributed_per_fr < 0.0 {
+            update(
+                sorted_indices(&fractions).iter(),
+                pivot_idx,
+                &mut fractions,
+                to_be_distributed_per_fr,
+            );
+        } else {
+            update(
+                sorted_indices(&fractions).iter().rev(),
+                pivot_idx,
+                &mut fractions,
+                to_be_distributed_per_fr,
+            );
+        }
+        fractions
+    }
+}
+
+fn add_fraction(mut fractions: Vec<f64>) -> Vec<f64> {
+    let new_fraction = 1.0 / (1.0 + fractions.len() as f64);
+    fractions.push(new_fraction);
+    let pivot_idx = fractions.len() - 1;
     let mut rest = 0.0;
     let new_fraction_reduction = fractions[pivot_idx] / (fractions.len() - 1) as f64;
     for idx in sorted_indices(&fractions)
@@ -68,13 +138,6 @@ fn normalize_fractions(mut fractions: Vec<f64>, pivot_idx: usize) -> Vec<f64> {
         };
     }
     fractions
-}
-
-fn add_fraction(mut fractions: Vec<f64>) -> Vec<f64> {
-    let new_fraction = 1.0 / (1.0 + fractions.len() as f64);
-    fractions.push(new_fraction);
-    let last_idx = fractions.len() - 1;
-    normalize_fractions(fractions, last_idx)
 }
 
 fn slice_by_date<'a, T>(
@@ -328,11 +391,12 @@ impl Charts {
         Ok(())
     }
 
-    pub fn update_fractions(&mut self, idx: usize) {
-        if let Ok(new_fr) = self.fraction_strings[idx].parse::<f64>() {
-            self.fractions[idx] = new_fr;
-            self.fraction_strings = sync_fraction_strs(&self.fractions);
+    pub fn update_fractions(&mut self, ui: &mut Ui, idx: usize) -> bool {
+        let slider = ui.add(egui::Slider::new(&mut self.fractions[idx], 0.0..=1.0));
+        if slider.changed() {
+            self.fractions = normalize_fractions(mem::take(&mut self.fractions), idx);
         }
+        slider.drag_released()
     }
 
     pub fn plot(&self, ui: &mut Ui, with_tmp: bool) -> BlcResult<()> {
@@ -411,4 +475,21 @@ fn test_redistribute() {
     let frs = vec![0.1, 0.6, 0.1];
     let x = redestribute_fractions(frs, 0.2);
     assert!((x.iter().sum::<f64>() - 1.0).abs() < 1e-12);
+}
+
+#[test]
+fn test_adaptfractions() {
+    fn test(input: Vec<f64>, reference: Vec<f64>, idx: usize) {
+        let result = normalize_fractions(input, idx);
+        assert!(result.len() > 0);
+        for (res, refe) in result.iter().zip(reference.iter()) {
+            assert!((res - refe).abs() < 1e-12);
+        }
+    }
+    test(vec![0.9, 0.05, 0.5], vec![0.5, 0.0, 0.5], 2);
+    test(vec![0.1, 0.1, 0.5], vec![0.25, 0.25, 0.5], 2);
+    test(vec![0.2, 0.1, 0.1], vec![0.2, 0.4, 0.4], 0);
+    test(vec![0.9, 0.1, 0.1], vec![0.9, 0.05, 0.05], 0);
+    test(vec![1.9, 0.1, 0.1], vec![1.0, 0.0, 0.0], 0);
+    test(vec![-1.9, 0.3, 0.1], vec![0.0, 0.6, 0.4], 0);
 }
