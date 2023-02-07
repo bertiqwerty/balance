@@ -274,14 +274,12 @@ impl<'a> eframe::App for BalanceApp<'a> {
             });
             egui::CollapsingHeader::new("Backtest").show(ui, |ui| {
                 if ui.button("MSCI EM").clicked() {
-                    //let url = "https://www.bertiqwerty.com/data/msciem.csv";
-                    let url = "http://localhost:8000/data/msciem.csv";
+                    let url = "https://www.bertiqwerty.com/data/msciem.csv";
                     trigger_dl(url, self.rx.clone(), ctx.clone());
                     self.download = Download::InProgress("MSCI EM");
                 }
                 if ui.button("MSCI World").clicked() {
-                    //let url = "https://www.bertiqwerty.com/data/msciworld.csv";
-                    let url = "http://localhost:8000/data/msciworld.csv";
+                    let url = "https://www.bertiqwerty.com/data/msciworld.csv";
                     trigger_dl(url, self.rx.clone(), ctx.clone());
                     self.download = Download::InProgress("MSCI World");
                 }
