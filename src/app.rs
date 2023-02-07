@@ -362,9 +362,6 @@ impl<'a> eframe::App for BalanceApp<'a> {
                 });
             let chart_inds = 0..(self.charts.persisted.len());
             let mut remove_idx = None;
-            if !self.charts.persisted.is_empty() {
-                ui.separator();
-            }
             egui::CollapsingHeader::new("restrict timeline").show(ui, |ui| {
                 egui::Grid::new("restriction-of-timeline").show(ui, |ui| {
                     if self.charts.start_slider(ui) {
@@ -376,6 +373,9 @@ impl<'a> eframe::App for BalanceApp<'a> {
                     }
                 });
             });
+            if !self.charts.persisted.is_empty() {
+                ui.separator();
+            }
             egui::Grid::new("grid-persistend-charts").show(ui, |ui| {
                 for idx in chart_inds {
                     ui.label(self.charts.persisted[idx].name());
