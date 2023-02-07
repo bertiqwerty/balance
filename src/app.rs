@@ -216,96 +216,91 @@ impl<'a> eframe::App for BalanceApp<'a> {
             });
         });
 
-        egui::SidePanel::left("side_panel").show(ctx, |ui| {
-            ui.heading("Simulate");
-            egui::Grid::new("simulate-inputs")
-                .num_columns(2)
-                .show(ui, |ui| {
-                    ui.label("expected yearly return [%]");
-                    ui.text_edit_singleline(&mut self.sim.expected_yearly_return);
-                    ui.end_row();
-                    ui.label("#months");
-                    ui.text_edit_singleline(&mut self.sim.n_months);
-                    ui.end_row();
-                    self.sim.start_month_slider.month_slider(ui, "start date");
+        egui::CentralPanel::default().show(ctx, |ui| {
+            egui::CollapsingHeader::new("Simulate").show(ui, |ui| {
+                egui::Grid::new("simulate-inputs")
+                    .num_columns(2)
+                    .show(ui, |ui| {
+                        ui.label("expected yearly return [%]");
+                        ui.text_edit_singleline(&mut self.sim.expected_yearly_return);
+                        ui.end_row();
+                        ui.label("#months");
+                        ui.text_edit_singleline(&mut self.sim.n_months);
+                        ui.end_row();
+                        self.sim.start_month_slider.month_slider(ui, "start date");
+                    });
+                ui.horizontal(|ui| {
+                    ui.label("vola");
+                    ui.radio_value(&mut self.sim.vola, Vola::No, format!("{}", Vola::No));
+                    ui.radio_value(&mut self.sim.vola, Vola::Lo, format!("{}", Vola::Lo));
+                    ui.radio_value(&mut self.sim.vola, Vola::Mi, format!("{}", Vola::Mi));
+                    ui.radio_value(&mut self.sim.vola, Vola::Hi, format!("{}", Vola::Hi));
                 });
-            ui.horizontal(|ui| {
-                ui.label("vola");
-                ui.radio_value(&mut self.sim.vola, Vola::No, format!("{}", Vola::No));
-                ui.radio_value(&mut self.sim.vola, Vola::Lo, format!("{}", Vola::Lo));
-                ui.radio_value(&mut self.sim.vola, Vola::Mi, format!("{}", Vola::Mi));
-                ui.radio_value(&mut self.sim.vola, Vola::Hi, format!("{}", Vola::Hi));
+                ui.horizontal(|ui| {
+                    if ui.button("simulate").clicked() {
+                        match self.sim.parse() {
+                            Ok(data) => {
+                                let (noise, expected_yearly_return, start_date, n_months) = data;
+                                match random_walk(expected_yearly_return, noise, n_months) {
+                                    Ok(values) => {
+                                        let tmp = Chart::new(
+                                            format!(
+                                                "{}_{}_{}",
+                                                self.sim.expected_yearly_return,
+                                                self.sim.n_months,
+                                                self.sim.vola
+                                            ),
+                                            (0..(n_months + 1))
+                                                .map(|i| date_after_nmonths(start_date, i))
+                                                .collect::<Vec<_>>(),
+                                            values,
+                                        );
+                                        self.charts.add_tmp(tmp);
+                                        self.status_msg = None;
+                                        self.charts.plot_balance = false;
+                                    }
+                                    Err(e) => {
+                                        self.status_msg = Some(format!("{e:?}"));
+                                    }
+                                };
+                            }
+                            Err(e) => {
+                                self.status_msg = Some(format!("{e:?}"));
+                            }
+                        };
+                    }
+                });
             });
-            ui.horizontal(|ui| {
-                if ui.button("simulate").clicked() {
-                    match self.sim.parse() {
-                        Ok(data) => {
-                            let (noise, expected_yearly_return, start_date, n_months) = data;
-                            match random_walk(expected_yearly_return, noise, n_months) {
-                                Ok(values) => {
-                                    let tmp = Chart::new(
-                                        format!(
-                                            "{}_{}_{}",
-                                            self.sim.expected_yearly_return,
-                                            self.sim.n_months,
-                                            self.sim.vola
-                                        ),
-                                        (0..(n_months + 1))
-                                            .map(|i| date_after_nmonths(start_date, i))
-                                            .collect::<Vec<_>>(),
-                                        values,
-                                    );
-                                    self.charts.add_tmp(tmp);
-                                    self.status_msg = None;
-                                    self.charts.plot_balance = false;
-                                }
-                                Err(e) => {
-                                    self.status_msg = Some(format!("{e:?}"));
-                                }
-                            };
-                        }
-                        Err(e) => {
-                            self.status_msg = Some(format!("{e:?}"));
-                        }
-                    };
+            egui::CollapsingHeader::new("Backtest").show(ui, |ui| {
+                if ui.button("MSCI EM").clicked() {
+                    //let url = "https://www.bertiqwerty.com/data/msciem.csv";
+                    let url = "http://localhost:8000/data/msciem.csv";
+                    trigger_dl(url, self.rx.clone(), ctx.clone());
+                    self.download = Download::InProgress("MSCI EM");
+                }
+                if ui.button("MSCI World").clicked() {
+                    //let url = "https://www.bertiqwerty.com/data/msciworld.csv";
+                    let url = "http://localhost:8000/data/msciworld.csv";
+                    trigger_dl(url, self.rx.clone(), ctx.clone());
+                    self.download = Download::InProgress("MSCI World");
                 }
             });
+
             ui.separator();
-            ui.heading("Backtest data");
-            if ui.button("MSCI EM").clicked() {
-                //let url = "https://www.bertiqwerty.com/data/msciem.csv";
-                let url = "http://localhost:8000/data/msciem.csv";
-                trigger_dl(url, self.rx.clone(), ctx.clone());
-                self.download = Download::InProgress("MSCI EM");
-            }
-            if ui.button("MSCI World").clicked() {
-                //let url = "https://www.bertiqwerty.com/data/msciworld.csv";
-                let url = "http://localhost:8000/data/msciworld.csv";
-                trigger_dl(url, self.rx.clone(), ctx.clone());
-                self.download = Download::InProgress("MSCI World");
-            }
-
-            ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = 0.0;
-                    ui.label("powered by ");
-                    ui.hyperlink_to("egui", "https://github.com/emilk/egui");
-                    ui.label(" and ");
-                    ui.hyperlink_to(
-                        "eframe",
-                        "https://github.com/emilk/egui/tree/master/crates/eframe",
-                    );
-                    ui.label(".");
-                });
-            });
-        });
-
-        egui::CentralPanel::default().show(ctx, |ui| {
             if let Some(status_msg) = &self.status_msg {
                 ui.label(status_msg);
             } else {
-                ui.label("ready");
+                if self.charts.persisted.is_empty() {
+                    ui.label("add simulated or backtested charts to compute balances");
+                } else {
+                    ui.label("ready");
+                }
             }
+            if ui.button("add current chart to balance").clicked() {
+                self.charts.persist_tmp();
+                self.recompute_balance();
+            }
+            ui.separator();
             egui::Grid::new("inputs-balance-payments-interval")
                 .num_columns(2)
                 .show(ui, |ui| {
@@ -373,13 +368,12 @@ impl<'a> eframe::App for BalanceApp<'a> {
                         nobalance(ui);
                     }
                     ui.end_row();
-                    if ui.button("add current chart").clicked() {
-                        self.charts.persist_tmp();
-                        self.recompute_balance();
-                    }
                 });
             let chart_inds = 0..(self.charts.persisted.len());
             let mut remove_idx = None;
+            if !self.charts.persisted.is_empty() {
+                ui.separator();
+            }
             egui::Grid::new("grid-persistend-charts").show(ui, |ui| {
                 for idx in chart_inds {
                     ui.label(self.charts.persisted[idx].name());
@@ -395,7 +389,9 @@ impl<'a> eframe::App for BalanceApp<'a> {
                     ui.end_row();
                 }
             });
-
+            if !self.charts.persisted.is_empty() {
+                ui.separator();
+            }
             if let Some(idx) = remove_idx {
                 self.charts.remove(idx);
             }
