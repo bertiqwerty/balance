@@ -111,6 +111,9 @@ impl PaymentData {
     }
 }
 
+// const BASE_URL_WWW: &str = "http://localhost:8000/data";
+const BASE_URL_WWW: &str = "https://www.bertiqwerty.com/data";
+
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 pub struct BalanceApp<'a> {
     rx: mpsc::Sender<ehttp::Result<ehttp::Response>>,
@@ -165,7 +168,8 @@ impl<'a> BalanceApp<'a> {
                     Chart::from_tuple(name.to_string(), (dates, values))
                 }
                 Err(e) => {
-                    self.status_msg = Some(format!("{e:?}"));
+                    let status = format!("{e:?}");
+                    self.status_msg = Some(status);
                     self.charts.move_tmp()
                 }
             };
@@ -217,7 +221,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("Create chart");
+            ui.heading("Charts");
             egui::CollapsingHeader::new("Simulate").show(ui, |ui| {
                 egui::Grid::new("simulate-inputs")
                     .num_columns(2)
@@ -272,34 +276,30 @@ impl<'a> eframe::App for BalanceApp<'a> {
                     }
                 });
             });
-            egui::CollapsingHeader::new("Backtest").show(ui, |ui| {
-                if ui.button("MSCI EM").clicked() {
-                    let url = "https://www.bertiqwerty.com/data/msciem.csv";
-                    trigger_dl(url, self.rx.clone(), ctx.clone());
-                    self.download = Download::InProgress("MSCI EM");
-                }
-                if ui.button("MSCI World").clicked() {
-                    let url = "https://www.bertiqwerty.com/data/msciworld.csv";
-                    trigger_dl(url, self.rx.clone(), ctx.clone());
-                    self.download = Download::InProgress("MSCI World");
-                }
+            egui::CollapsingHeader::new("Historical Index Data").show(ui, |ui| {
+                let mut dl_button = |name, filename| {
+                    if ui.button(name).clicked() {
+                        let url = format!("{BASE_URL_WWW}/{filename}");
+                        trigger_dl(&url, self.rx.clone(), ctx.clone());
+                        self.download = Download::InProgress(name);
+                    }
+                };
+                dl_button("MSCI World", "msciworld.csv");
+                dl_button("MSCI EM", "msciem.csv");
+                dl_button("MSCI Europe", "mscieurope.csv");
+                dl_button("S&P 500", "sandp500.csv");
+                ui.horizontal(|ui| {
+                    ui.label("data from");
+                    ui.link("https://curvo.eu/backtest/")
+                });
             });
-
-            ui.separator();
-            if let Some(status_msg) = &self.status_msg {
-                ui.label(status_msg);
-            } else if self.charts.persisted.is_empty() {
-                ui.label("add simulated or backtested charts to compute balances");
-            } else {
-                ui.label("ready");
-            }
 
             if ui.button("add current chart to balance").clicked() {
                 self.charts.persist_tmp();
                 self.recompute_balance();
             }
             ui.separator();
-            ui.heading("Compute balance");
+            ui.heading("Balance");
             egui::Grid::new("inputs-balance-payments-interval")
                 .num_columns(2)
                 .show(ui, |ui| {
@@ -375,26 +375,32 @@ impl<'a> eframe::App for BalanceApp<'a> {
             });
             if !self.charts.persisted.is_empty() {
                 ui.separator();
-            }
-            egui::Grid::new("grid-persistend-charts").show(ui, |ui| {
-                for idx in chart_inds {
-                    ui.label(self.charts.persisted[idx].name());
-                    if self.charts.update_fractions(ui, idx) {
-                        self.recompute_balance();
-                    }
+                egui::Grid::new("grid-persistend-charts").show(ui, |ui| {
+                    for idx in chart_inds {
+                        ui.label(self.charts.persisted[idx].name());
+                        if self.charts.update_fractions(ui, idx) {
+                            self.recompute_balance();
+                        }
 
-                    if ui.button("x").clicked() {
-                        remove_idx = Some(idx);
+                        if ui.button("x").clicked() {
+                            remove_idx = Some(idx);
+                        }
+                        ui.end_row();
                     }
-                    ui.end_row();
-                }
-            });
-            if !self.charts.persisted.is_empty() {
-                ui.separator();
+                });
             }
             if let Some(idx) = remove_idx {
                 self.charts.remove(idx);
             }
+            ui.separator();
+            if let Some(status_msg) = &self.status_msg {
+                ui.label(status_msg);
+            } else if self.charts.persisted.is_empty() {
+                ui.label("add simulated or historical charts to compute balances");
+            } else {
+                ui.label("ready");
+            }
+            ui.separator();
 
             ui.horizontal(|ui| {
                 if ui
