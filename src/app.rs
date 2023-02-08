@@ -123,6 +123,7 @@ pub struct BalanceApp<'a> {
     sim: SimInput,
     charts: Charts,
     payment: PaymentData,
+    rebalance_stats: bool,
 }
 
 impl<'a> Default for BalanceApp<'a> {
@@ -136,6 +137,7 @@ impl<'a> Default for BalanceApp<'a> {
             sim: SimInput::new(),
             charts: Charts::default(),
             payment: PaymentData::new(),
+            rebalance_stats: false,
         }
     }
 }
@@ -360,8 +362,6 @@ impl<'a> eframe::App for BalanceApp<'a> {
                     }
                     ui.end_row();
                 });
-            let chart_inds = 0..(self.charts.persisted.len());
-            let mut remove_idx = None;
             egui::CollapsingHeader::new("restrict timeline").show(ui, |ui| {
                 egui::Grid::new("restriction-of-timeline").show(ui, |ui| {
                     if self.charts.start_slider(ui) {
@@ -376,21 +376,10 @@ impl<'a> eframe::App for BalanceApp<'a> {
             if !self.charts.persisted.is_empty() {
                 ui.separator();
                 egui::Grid::new("grid-persistend-charts").show(ui, |ui| {
-                    for idx in chart_inds {
-                        ui.label(self.charts.persisted[idx].name());
-                        if self.charts.update_fractions(ui, idx) {
-                            self.recompute_balance();
-                        }
-
-                        if ui.button("x").clicked() {
-                            remove_idx = Some(idx);
-                        }
-                        ui.end_row();
+                    if self.charts.fraction_sliders(ui) {
+                        self.recompute_balance();
                     }
                 });
-            }
-            if let Some(idx) = remove_idx {
-                self.charts.remove(idx);
             }
             ui.separator();
             if let Some(status_msg) = &self.status_msg {
@@ -404,19 +393,34 @@ impl<'a> eframe::App for BalanceApp<'a> {
 
             ui.horizontal(|ui| {
                 if ui
-                    .selectable_label(self.charts.plot_balance, "balance plot")
+                    .selectable_label(
+                        self.charts.plot_balance && !self.rebalance_stats,
+                        "balance plot",
+                    )
                     .clicked()
                 {
                     self.charts.plot_balance = true;
+                    self.rebalance_stats = false;
                 }
                 if ui
-                    .selectable_label(!self.charts.plot_balance, "charts plot")
+                    .selectable_label(
+                        !self.charts.plot_balance && !self.rebalance_stats,
+                        "charts plot",
+                    )
                     .clicked()
                 {
                     self.charts.plot_balance = false;
+                    self.rebalance_stats = false;
+                }
+                if ui
+                    .selectable_label(self.rebalance_stats, "rebalance statistics")
+                    .clicked()
+                {
+                    self.rebalance_stats = true;
                 }
             });
-            if let Err(e) = self.charts.plot(ui, !self.charts.plot_balance) {
+            if self.rebalance_stats {
+            } else if let Err(e) = self.charts.plot(ui, !self.charts.plot_balance) {
                 self.status_msg = Some(format!("{e:?}"));
             }
             egui::warn_if_debug_build(ui);

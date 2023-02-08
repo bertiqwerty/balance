@@ -62,37 +62,60 @@ fn clamp_01(x: f64) -> (f64, f64) {
     }
 }
 
-fn normalize_fractions(mut fractions: Vec<f64>, pivot_idx: usize) -> Vec<f64> {
+fn normalize_fractions(mut fractions: Vec<f64>, pivot_idx: usize, fixed: &[bool]) -> Vec<f64> {
+    let n_fixed = fixed
+        .iter()
+        .enumerate()
+        .filter(|(i, b)| *i != pivot_idx && **b)
+        .count();
+    let fixed_sum: f64 = fractions
+        .iter()
+        .zip(fixed.iter())
+        .enumerate()
+        .filter(|(i, (_, b))| **b && *i != pivot_idx)
+        .map(|(_, (fr, _))| fr)
+        .sum();
     if fractions.len() == 1 {
         fractions[pivot_idx] = 1.0;
         fractions
     } else if fractions.is_empty() {
         fractions
+    } else if fractions.len() - n_fixed == 1 {
+        fractions[pivot_idx] = 1.0 - fixed_sum;
+        fractions
     } else {
-        fractions[pivot_idx] = if fractions[pivot_idx] > 1.0 {
-            1.0
+        let upper = 1.0 - fixed_sum;
+
+        fractions[pivot_idx] = if fractions[pivot_idx] > upper {
+            upper
         } else if fractions[pivot_idx] < 0.0 {
             0.0
         } else {
             fractions[pivot_idx]
         };
-        let non_pivot_sum: f64 = fractions
+
+        fn is_mutable(i: usize, pivot_idx: usize, fixed: &[bool]) -> bool {
+            i != pivot_idx && !fixed[i]
+        }
+
+        let mutable_sum: f64 = fractions
             .iter()
             .enumerate()
-            .filter(|(i, _)| *i != pivot_idx)
+            .filter(|(i, _)| is_mutable(*i, pivot_idx, fixed))
             .map(|(_, x)| x)
             .sum();
-        let to_be_distributed_per_fr =
-            (1.0 - fractions[pivot_idx] - non_pivot_sum) / (fractions.len() - 1) as f64;
+        let to_be_distributed_per_fr = (1.0 - fractions[pivot_idx] - mutable_sum - fixed_sum)
+            / (fractions.len() - 1 - n_fixed) as f64;
 
         fn update<'a, I: Iterator<Item = &'a usize>>(
             it: I,
             pivot_idx: usize,
             fractions: &mut [f64],
             to_be_distributed_per_fr: f64,
+            fixed: &[bool],
         ) {
             let mut rest = 0.0;
-            for i in it.filter(|i| **i != pivot_idx) {
+            for i in it.filter(|i| is_mutable(**i, pivot_idx, fixed)) {
                 fractions[*i] += to_be_distributed_per_fr + rest;
                 let (clamped, rest_) = clamp_01(fractions[*i]);
                 fractions[*i] = clamped;
@@ -106,6 +129,7 @@ fn normalize_fractions(mut fractions: Vec<f64>, pivot_idx: usize) -> Vec<f64> {
                 pivot_idx,
                 &mut fractions,
                 to_be_distributed_per_fr,
+                fixed,
             );
         } else {
             update(
@@ -113,6 +137,7 @@ fn normalize_fractions(mut fractions: Vec<f64>, pivot_idx: usize) -> Vec<f64> {
                 pivot_idx,
                 &mut fractions,
                 to_be_distributed_per_fr,
+                fixed,
             );
         }
         fractions
@@ -156,13 +181,6 @@ fn slice_by_date<'a, T>(
         .ok_or_else(|| blcerr!("slice by date - could not find end idx of {end_date}"))?
         + 1;
     Ok(&to_be_sliced[start_idx..end_idx])
-}
-
-fn sync_fraction_strs(fractions: &[f64]) -> Vec<String> {
-    fractions
-        .iter()
-        .map(|fr| format!("{fr:.2}"))
-        .collect::<Vec<_>>()
 }
 
 #[derive(Default, Debug, Clone)]
@@ -222,7 +240,7 @@ pub struct Charts {
     tmp: Chart,
     pub persisted: Vec<Chart>,
     fractions: Vec<f64>,
-    pub fraction_strings: Vec<String>,
+    fractions_fixed: Vec<bool>,
     total_balance_over_month: Option<Chart>,
     total_payments_over_month: Option<Chart>,
     pub plot_balance: bool,
@@ -327,19 +345,44 @@ impl Charts {
             let c = Chart::new(self.adapt_name(mem::take(&mut c.name)), c.dates, c.values);
             self.persisted.push(c);
             self.fractions = add_fraction(mem::take(&mut self.fractions));
-            self.fraction_strings = sync_fraction_strs(&self.fractions);
+            self.fractions_fixed.push(false);
         }
     }
 
     pub fn remove(&mut self, idx: usize) {
         self.persisted.remove(idx);
-        self.fraction_strings.remove(idx);
+        self.fractions_fixed.remove(idx);
         let fr_removed = self.fractions.remove(idx);
         let new_fractions = redestribute_fractions(mem::take(&mut self.fractions), fr_removed);
-        for (fs, nf) in self.fraction_strings.iter_mut().zip(new_fractions.iter()) {
-            *fs = format!("{nf:0.2}");
-        }
         self.fractions = new_fractions;
+    }
+
+    pub fn fraction_sliders(&mut self, ui: &mut Ui) -> bool {
+        let chart_inds = 0..(self.persisted.len());
+        let mut remove_idx = None;
+        let mut recompute = false;
+        for idx in chart_inds {
+            ui.label(self.persisted[idx].name());
+            let slider = ui.add(egui::Slider::new(&mut self.fractions[idx], 0.0..=1.0));
+            if slider.changed() {
+                self.fractions =
+                    normalize_fractions(mem::take(&mut self.fractions), idx, &self.fractions_fixed);
+            }
+
+            if slider.drag_released() {
+                recompute = true;
+            }
+
+            if ui.button("x").clicked() {
+                remove_idx = Some(idx);
+            }
+            ui.checkbox(&mut self.fractions_fixed[idx], "fix");
+            ui.end_row();
+        }
+        if let Some(idx) = remove_idx {
+            self.remove(idx);
+        }
+        recompute
     }
 
     pub fn compute_balance(
@@ -389,14 +432,6 @@ impl Charts {
         self.total_balance_over_month = Some(b_chart);
         self.total_payments_over_month = Some(p_chart);
         Ok(())
-    }
-
-    pub fn update_fractions(&mut self, ui: &mut Ui, idx: usize) -> bool {
-        let slider = ui.add(egui::Slider::new(&mut self.fractions[idx], 0.0..=1.0));
-        if slider.changed() {
-            self.fractions = normalize_fractions(mem::take(&mut self.fractions), idx);
-        }
-        slider.drag_released()
     }
 
     pub fn plot(&self, ui: &mut Ui, with_tmp: bool) -> BlcResult<()> {
@@ -479,17 +514,47 @@ fn test_redistribute() {
 
 #[test]
 fn test_adaptfractions() {
-    fn test(input: Vec<f64>, reference: Vec<f64>, idx: usize) {
-        let result = normalize_fractions(input, idx);
-        assert!(result.len() > 0);
+    fn test(input: Vec<f64>, reference: Vec<f64>, idx: usize, fixed: &[bool]) {
+        let fixed = if fixed.is_empty() {
+            &[false, false, false]
+        } else {
+            fixed
+        };
+        let result = normalize_fractions(input, idx, fixed);
+        assert!(!result.is_empty());
         for (res, refe) in result.iter().zip(reference.iter()) {
             assert!((res - refe).abs() < 1e-12);
         }
     }
-    test(vec![0.9, 0.05, 0.5], vec![0.5, 0.0, 0.5], 2);
-    test(vec![0.1, 0.1, 0.5], vec![0.25, 0.25, 0.5], 2);
-    test(vec![0.2, 0.1, 0.1], vec![0.2, 0.4, 0.4], 0);
-    test(vec![0.9, 0.1, 0.1], vec![0.9, 0.05, 0.05], 0);
-    test(vec![1.9, 0.1, 0.1], vec![1.0, 0.0, 0.0], 0);
-    test(vec![-1.9, 0.3, 0.1], vec![0.0, 0.6, 0.4], 0);
+    test(vec![0.1, 0.3], vec![0.7, 0.3], 0, &[false, true]);
+    test(
+        vec![0.1, 0.3, 0.9],
+        vec![0.0, 0.3, 0.7],
+        2,
+        &[false, true, false],
+    );
+    test(
+        vec![0.1, 0.1, 0.9],
+        vec![0.0, 0.1, 0.9],
+        2,
+        &[false, true, false],
+    );
+    test(
+        vec![-1.9, 0.3, 0.1],
+        vec![0.0, 0.6, 0.4],
+        0,
+        &[true, false, false],
+    );
+    test(vec![0.9, 0.05, 0.5], vec![0.5, 0.0, 0.5], 2, &[]);
+    test(
+        vec![0.1, 0.1, 0.5],
+        vec![0.4, 0.1, 0.5],
+        2,
+        &[false, true, false],
+    );
+    test(vec![0.1, 0.1, 0.5], vec![0.25, 0.25, 0.5], 2, &[]);
+    test(vec![0.2, 0.1, 0.1], vec![0.2, 0.4, 0.4], 0, &[]);
+    test(vec![0.9, 0.1, 0.1], vec![0.9, 0.05, 0.05], 0, &[]);
+    test(vec![1.9, 0.1, 0.1], vec![1.0, 0.0, 0.0], 0, &[]);
+    test(vec![-1.9, 0.3, 0.1], vec![0.0, 0.6, 0.4], 0, &[]);
 }
