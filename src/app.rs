@@ -5,7 +5,7 @@ use std::sync::mpsc::Sender;
 
 use crate::blcerr;
 use crate::charts::{Chart, Charts};
-use crate::compute::random_walk;
+use crate::compute::{random_walk, RebalanceStats};
 use crate::core_types::{to_blc, BlcResult};
 use crate::date::{date_after_nmonths, Date};
 use crate::io::read_csv_from_str;
@@ -123,7 +123,7 @@ pub struct BalanceApp<'a> {
     sim: SimInput,
     charts: Charts,
     payment: PaymentData,
-    rebalance_stats: bool,
+    rebalance_stats: Option<BlcResult<RebalanceStats>>,
 }
 
 impl<'a> Default for BalanceApp<'a> {
@@ -137,7 +137,7 @@ impl<'a> Default for BalanceApp<'a> {
             sim: SimInput::new(),
             charts: Charts::default(),
             payment: PaymentData::new(),
-            rebalance_stats: false,
+            rebalance_stats: None,
         }
     }
 }
@@ -394,32 +394,62 @@ impl<'a> eframe::App for BalanceApp<'a> {
             ui.horizontal(|ui| {
                 if ui
                     .selectable_label(
-                        self.charts.plot_balance && !self.rebalance_stats,
+                        self.charts.plot_balance && self.rebalance_stats.is_none(),
                         "balance plot",
                     )
                     .clicked()
                 {
                     self.charts.plot_balance = true;
-                    self.rebalance_stats = false;
+                    self.rebalance_stats = None;
                 }
                 if ui
                     .selectable_label(
-                        !self.charts.plot_balance && !self.rebalance_stats,
+                        !self.charts.plot_balance && self.rebalance_stats.is_none(),
                         "charts plot",
                     )
                     .clicked()
                 {
                     self.charts.plot_balance = false;
-                    self.rebalance_stats = false;
+                    self.rebalance_stats = None;
                 }
+
                 if ui
-                    .selectable_label(self.rebalance_stats, "rebalance statistics")
+                    .selectable_label(self.rebalance_stats.is_some(), "rebalance statistics")
                     .clicked()
                 {
-                    self.rebalance_stats = true;
+                    let PaymentData {
+                        initial_balance: (_, initial_balance),
+                        monthly_payment: (_, monthly_payment),
+                        rebalance_interval: (_, rebalance_interval),
+                    } = self.payment;
+                    if let Some(rebalance_interval) = rebalance_interval {
+                        let stats = self.charts.compute_rebalancestats(
+                            initial_balance,
+                            monthly_payment,
+                            rebalance_interval,
+                        );
+                        self.rebalance_stats = Some(stats);
+                    } else {
+                        let err_msg = "no rebalance interval given".to_string();
+
+                        self.status_msg = Some(err_msg);
+                    }
                 }
             });
-            if self.rebalance_stats {
+            if let Some(stats) = &self.rebalance_stats {
+                egui::Grid::new("rebalance-stats").show(ui, |ui| match stats {
+                    Ok(stats) => {
+                        ui.label(format!("mean with re-balance"));
+                        ui.label(format!("mean without re-balance"));
+                        ui.end_row();
+                        let (w_reb, wo_reb) = stats.mean_across_nmonths();
+                        ui.label(format!("{w_reb:0.2}"));
+                        ui.label(format!("{wo_reb:0.2}"));
+                    }
+                    Err(e) => {
+                        self.status_msg = Some(format!("{e:?}"));
+                    }
+                });
             } else if let Err(e) = self.charts.plot(ui, !self.charts.plot_balance) {
                 self.status_msg = Some(format!("{e:?}"));
             }

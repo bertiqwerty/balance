@@ -1,6 +1,9 @@
 use crate::{
     blcerr,
-    compute::{adapt_pricedev_to_initial_balance, compute_balance_over_months, RebalanceData},
+    compute::{
+        adapt_pricedev_to_initial_balance, compute_balance_over_months, find_shortestlen,
+        rebalance_stats, RebalanceData, RebalanceStats,
+    },
     core_types::BlcResult,
     date::{fill_between, n_month_between_dates, Date},
     month_slider::{MonthSlider, SliderState},
@@ -385,21 +388,19 @@ impl Charts {
         recompute
     }
 
-    pub fn compute_balance(
-        &mut self,
+    pub fn gather_compute_data<'a>(
+        &'a self,
         initial_balance: f64,
         monthly_payments: f64,
-        rebalance_interval: Option<usize>,
-    ) -> BlcResult<()> {
-        let mut lens = self.persisted.iter().map(|dev| dev.dates.len());
-        let first_len = lens.next().ok_or_else(|| blcerr!("no charts added"))?;
-
-        let (start_date, end_date) = self.start_end_date(false)?;
+        start_date: Date,
+        end_date: Date,
+    ) -> BlcResult<(Vec<&'a [f64]>, Vec<f64>, Vec<Vec<f64>>)> {
         let price_devs = self
             .persisted
             .iter()
             .map(|c| c.sliced_values(start_date, end_date))
             .collect::<BlcResult<Vec<_>>>()?;
+        let shortest_len = find_shortestlen(&price_devs)?;
         let initial_balances = self
             .fractions
             .iter()
@@ -408,8 +409,45 @@ impl Charts {
         let monthly_payments = self
             .fractions
             .iter()
-            .map(|fr| vec![monthly_payments * *fr; first_len - 1])
+            .map(|fr| vec![monthly_payments * *fr; shortest_len - 1])
             .collect::<Vec<_>>();
+        Ok((price_devs, initial_balances, monthly_payments))
+    }
+
+    pub fn compute_rebalancestats(
+        &self,
+        initial_balance: f64,
+        monthly_payments: f64,
+        rebalance_interval: usize,
+    ) -> BlcResult<RebalanceStats> {
+        let (start_date, end_date) = start_end_date(self.persisted.iter())?;
+        let (price_devs, initial_balances, monthly_payments) =
+            self.gather_compute_data(initial_balance, monthly_payments, start_date, end_date)?;
+        let monthly_payments_refs = monthly_payments
+            .iter()
+            .map(|mp| &mp[..])
+            .collect::<Vec<_>>();
+        rebalance_stats(
+            &price_devs,
+            &initial_balances,
+            Some(&monthly_payments_refs),
+            RebalanceData {
+                interval: rebalance_interval,
+                fractions: &self.fractions,
+            },
+            None
+        )
+    }
+
+    pub fn compute_balance(
+        &mut self,
+        initial_balance: f64,
+        monthly_payments: f64,
+        rebalance_interval: Option<usize>,
+    ) -> BlcResult<()> {
+        let (start_date, end_date) = self.start_end_date(false)?;
+        let (price_devs, initial_balances, monthly_payments) =
+            self.gather_compute_data(initial_balance, monthly_payments, start_date, end_date)?;
         let monthly_payments_refs = monthly_payments
             .iter()
             .map(|mp| &mp[..])
