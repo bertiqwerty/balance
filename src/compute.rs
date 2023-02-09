@@ -189,17 +189,17 @@ pub fn rebalance_stats<'a>(
             compute_total_balance(&price_devs_cur, initial_balances, monthly_payments, data);
         balance
     };
-    let records = (min_n_months..shortest_len)
+    let records = (min_n_months..shortest_len + 1)
         .map(|n_months| {
-            let last_month = shortest_len - n_months;
-            let bsum_w_reb: f64 = (0..last_month)
+            let last_start_month = shortest_len - n_months + 1;
+            let bsum_w_reb: f64 = (0..last_start_month)
                 .map(|start_idx| comp_bal(start_idx, n_months, Some(rebalance_data.clone())))
                 .sum();
-            let bsum_wo_reb: f64 = (0..last_month)
+            let bsum_wo_reb: f64 = (0..last_start_month)
                 .map(|start_idx| comp_bal(start_idx, n_months, None))
                 .sum();
-            let mean_w_reb = bsum_w_reb / n_months as f64;
-            let mean_wo_reb = bsum_wo_reb / n_months as f64;
+            let mean_w_reb = bsum_w_reb / last_start_month as f64;
+            let mean_wo_reb = bsum_wo_reb / last_start_month as f64;
             RebalanceStatRecord {
                 mean_w_reb,
                 mean_wo_reb,
@@ -365,8 +365,9 @@ fn test_rebalance() {
 
 #[test]
 fn test_rebalancestats() {
-    let v1s = vec![1.0, 1.0, 1.0, 0.0];
-    let v2s = vec![1.0, 1.0, 1.0, 1.0];
+    let v1s = vec![1.0, 1.0, 1.0, 1.0, 0.5, 1.0];
+    let v2s = vec![1.0, 1.0, 1.0, 1.0, 1.0, 1.0];
+    let min_n_months = 3;
     let stats = rebalance_stats(
         &[&v1s, &v2s],
         &[0.5, 0.5],
@@ -375,10 +376,18 @@ fn test_rebalancestats() {
             interval: 1,
             fractions: &[0.5, 0.5],
         },
-        Some(2),
+        Some(min_n_months),
     )
     .unwrap();
-    assert!(stats.records.len() == 2);
+    assert!(stats.records.len() == min_n_months + 1);
+    let ref_means_wo = vec![0.9375, 0.9166666666666666, 0.875, 1.0];
+    let ref_means_w = vec![0.96875, 0.9583333333333334, 0.9375, 1.125];
+    for (i, r) in stats.records.iter().enumerate() {
+        let n_months = i + min_n_months;
+        assert_eq!(r.n_months, n_months);
+        assert!((r.mean_wo_reb - ref_means_wo[i]).abs() < 1e-6);
+        assert!((r.mean_w_reb - ref_means_w[i]).abs() < 1e-6);
+    }
 
     let stat0 = RebalanceStatRecord {
         mean_w_reb: 4.0,
