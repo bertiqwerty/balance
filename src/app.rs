@@ -200,6 +200,26 @@ impl<'a> BalanceApp<'a> {
             }
         }
     }
+    fn recompute_rebalance_stats(&mut self, always: bool) {
+        let PaymentData {
+            initial_balance: (_, initial_balance),
+            monthly_payment: (_, monthly_payment),
+            rebalance_interval: (_, rebalance_interval),
+        } = self.payment;
+        if self.rebalance_stats.is_some() || always {
+            if let Some(rebalance_interval) = rebalance_interval {
+                let stats = self.charts.compute_rebalancestats(
+                    initial_balance,
+                    monthly_payment,
+                    rebalance_interval,
+                );
+                self.rebalance_stats = Some(stats);
+            } else {
+                let err_msg = "no rebalance interval given".to_string();
+                self.status_msg = Some(err_msg);
+            }
+        }
+    }
 }
 
 impl<'a> eframe::App for BalanceApp<'a> {
@@ -245,6 +265,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                 });
                 ui.horizontal(|ui| {
                     if ui.button("simulate").clicked() {
+                        self.rebalance_stats = None;
                         match self.sim.parse() {
                             Ok(data) => {
                                 let (noise, expected_yearly_return, start_date, n_months) = data;
@@ -311,6 +332,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                         .changed()
                     {
                         self.recompute_balance();
+                        self.recompute_rebalance_stats(false);
                     }
                     ui.end_row();
                     ui.label("monthly payment");
@@ -319,6 +341,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                         .changed()
                     {
                         self.recompute_balance();
+                        self.recompute_rebalance_stats(false);
                     }
                     ui.end_row();
                     ui.label("rebalance interval (months)");
@@ -327,6 +350,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                         .changed()
                     {
                         self.recompute_balance();
+                        self.recompute_rebalance_stats(false);
                     }
                     let nobalance = |ui: &mut Ui| {
                         ui.label("final balance");
@@ -378,6 +402,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                 egui::Grid::new("grid-persistend-charts").show(ui, |ui| {
                     if self.charts.fraction_sliders(ui) {
                         self.recompute_balance();
+                        self.recompute_rebalance_stats(false);
                     }
                 });
             }
@@ -417,23 +442,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                     .selectable_label(self.rebalance_stats.is_some(), "rebalance statistics")
                     .clicked()
                 {
-                    let PaymentData {
-                        initial_balance: (_, initial_balance),
-                        monthly_payment: (_, monthly_payment),
-                        rebalance_interval: (_, rebalance_interval),
-                    } = self.payment;
-                    if let Some(rebalance_interval) = rebalance_interval {
-                        let stats = self.charts.compute_rebalancestats(
-                            initial_balance,
-                            monthly_payment,
-                            rebalance_interval,
-                        );
-                        self.rebalance_stats = Some(stats);
-                    } else {
-                        let err_msg = "no rebalance interval given".to_string();
-
-                        self.status_msg = Some(err_msg);
-                    }
+                    self.recompute_rebalance_stats(true);
                 }
             });
             if let Some(stats) = &self.rebalance_stats {
@@ -461,7 +470,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                                     format!("With rebalancing we obtain {:0.2} times the performance compared to not rebalancing for the given charts.", 
                                     {factor})
                                 );
-                                ui.label("We ignore any costs that might be induced by rebalancing.");
+                                ui.label("We ignore the timeline restrictions and any costs that might be induced by rebalancing.");
                             },
                             Err(e) => {
                                 self.status_msg = Some(format!("{e:?}"));

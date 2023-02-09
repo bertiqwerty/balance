@@ -263,7 +263,7 @@ impl Charts {
     }
 
     pub fn start_slider(&mut self, ui: &mut Ui) -> bool {
-        let contained = self.user_start.month_slider(ui, "begin");
+        let released = self.user_start.month_slider(ui, "begin");
 
         if self.user_start.is_at_end() {
             self.user_start.move_left();
@@ -273,10 +273,10 @@ impl Charts {
         {
             self.user_end.move_right();
         }
-        contained
+        released
     }
     pub fn end_slider(&mut self, ui: &mut Ui) -> bool {
-        let contained = self.user_end.month_slider(ui, "end");
+        let released = self.user_end.month_slider(ui, "end");
 
         if self.user_end.is_at_start() {
             self.user_end.move_right();
@@ -286,7 +286,7 @@ impl Charts {
         {
             self.user_start.move_left();
         }
-        contained
+        released
     }
 
     pub fn n_months_persisted(&self) -> BlcResult<usize> {
