@@ -423,7 +423,7 @@ impl Charts {
         monthly_payments: f64,
         rebalance_interval: usize,
     ) -> BlcResult<RebalanceStats> {
-        let (start_date, end_date) = start_end_date(self.persisted.iter())?;
+        let (start_date, end_date) = self.start_end_date(false)?;
         let (price_devs, initial_balances, monthly_payments) =
             self.gather_compute_data(initial_balance, monthly_payments, start_date, end_date)?;
         let monthly_payments_refs = monthly_payments
@@ -438,7 +438,7 @@ impl Charts {
                 interval: rebalance_interval,
                 fractions: &self.fractions,
             },
-            None,
+            10,
         )
     }
 

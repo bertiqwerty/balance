@@ -151,20 +151,24 @@ pub struct RebalanceStatRecord {
     pub n_months: usize,
 }
 
+fn compute_mean(
+    records: &[RebalanceStatRecord],
+    f: impl Fn(&RebalanceStatRecord) -> f64,
+    begin: usize,
+    end: usize,
+) -> f64 {
+    let s = (begin..end)
+        .map(|i| f(&records[i]))
+        .sum::<f64>();
+    s / (end - begin) as f64
+}
+
 #[derive(Debug, Clone)]
 pub struct RebalanceStats {
     pub records: Vec<RebalanceStatRecord>,
 }
 impl RebalanceStats {
     pub fn mean_across_nmonths(&self) -> BlcResult<RebalanceStatsSummary> {
-        let len_recs = self.records.len();
-        let (mean_across_months_w_reb, mean_across_months_wo_reb) = self
-            .records
-            .iter()
-            .map(|r| (r.mean_w_reb, r.mean_wo_reb))
-            .fold((0.0, 0.0), |x, y| ((x.0 + y.0), (x.1 + y.1)));
-        let mean_across_months_w_reb = mean_across_months_w_reb / len_recs as f64;
-        let mean_across_months_wo_reb = mean_across_months_wo_reb / len_recs as f64;
         let min_n_months = self
             .records
             .iter()
@@ -173,11 +177,44 @@ impl RebalanceStats {
             .ok_or_else(|| blcerr!("no records found"))?;
         let max_n_months = self.records.iter().map(|r| r.n_months).max().unwrap();
 
+        let len_records = self.records.len();
+        
+        let n_33 = (len_records as f64 * 0.33).round() as usize;
+        let n_67 = (len_records as f64 * 0.67).round() as usize;
+
+        let mean_across_months_w_reb_min_33 =
+            compute_mean(&self.records, |r| r.mean_w_reb, 0, n_33);
+        let mean_across_months_wo_reb_min_33 =
+            compute_mean(&self.records, |r| r.mean_wo_reb, 0, n_33);
+        let mean_across_months_w_reb_33_67 =
+            compute_mean(&self.records, |r| r.mean_w_reb, n_33, n_67);
+        let mean_across_months_wo_reb_33_67 =
+            compute_mean(&self.records, |r| r.mean_wo_reb, n_33, n_67);
+        let mean_across_months_w_reb_67_max =
+            compute_mean(&self.records, |r| r.mean_w_reb, n_67, len_records);
+        let mean_across_months_wo_reb_67_max =
+            compute_mean(&self.records, |r| r.mean_wo_reb, n_67, len_records);
+
+        let mean_across_months_w_reb =
+            compute_mean(&self.records, |r| r.mean_w_reb, 0, len_records);
+        let mean_across_months_wo_reb =
+            compute_mean(&self.records, |r| r.mean_wo_reb, 0, len_records);
+        println!("33 {}", mean_across_months_w_reb_min_33);
+        println!("all {}", mean_across_months_w_reb);
+
         Ok(RebalanceStatsSummary {
             min_n_months,
             max_n_months,
+            n_months_33: self.records[n_33].n_months,
+            n_months_67: self.records[n_67].n_months,
             mean_across_months_w_reb,
             mean_across_months_wo_reb,
+            mean_across_months_w_reb_min_33,
+            mean_across_months_wo_reb_min_33,
+            mean_across_months_w_reb_33_67,
+            mean_across_months_wo_reb_33_67,
+            mean_across_months_w_reb_67_max,
+            mean_across_months_wo_reb_67_max,
         })
     }
 }
@@ -185,8 +222,16 @@ impl RebalanceStats {
 pub struct RebalanceStatsSummary {
     pub min_n_months: usize,
     pub max_n_months: usize,
+    pub n_months_33: usize,
+    pub n_months_67: usize,
     pub mean_across_months_w_reb: f64,
     pub mean_across_months_wo_reb: f64,
+    pub mean_across_months_w_reb_min_33: f64,
+    pub mean_across_months_wo_reb_min_33: f64,
+    pub mean_across_months_w_reb_33_67: f64,
+    pub mean_across_months_wo_reb_33_67: f64,
+    pub mean_across_months_w_reb_67_max: f64,
+    pub mean_across_months_wo_reb_67_max: f64,
 }
 
 pub fn rebalance_stats<'a>(
@@ -194,14 +239,9 @@ pub fn rebalance_stats<'a>(
     initial_balances: &'a [f64],
     monthly_payments: Option<&'a [&'a [f64]]>,
     rebalance_data: RebalanceData<'a>,
-    min_n_month: Option<usize>,
+    min_n_months: usize,
 ) -> BlcResult<RebalanceStats> {
     let shortest_len = find_shortestlen(price_devs)?;
-    let min_n_months = if let Some(min_n_month) = min_n_month {
-        min_n_month
-    } else {
-        (shortest_len as f64 * 0.8) as usize
-    };
     let comp_bal = |start_idx: usize, n_months: usize, data: Option<RebalanceData<'a>>| {
         let price_devs_cur: Vec<&[f64]> = price_devs
             .iter()
@@ -398,7 +438,7 @@ fn test_rebalancestats() {
             interval: 1,
             fractions: &[0.5, 0.5],
         },
-        Some(min_n_months),
+        min_n_months,
     )
     .unwrap();
     assert!(stats.records.len() == min_n_months + 1);

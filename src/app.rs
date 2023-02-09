@@ -393,10 +393,12 @@ impl<'a> eframe::App for BalanceApp<'a> {
                     egui::Grid::new("restriction-of-timeline").show(ui, |ui| {
                         if self.charts.start_slider(ui) {
                             self.recompute_balance();
+                            self.recompute_rebalance_stats(false);
                         }
                         ui.end_row();
                         if self.charts.end_slider(ui) {
                             self.recompute_balance();
+                            self.recompute_rebalance_stats(false);
                         }
                     });
                 });
@@ -454,26 +456,37 @@ impl<'a> eframe::App for BalanceApp<'a> {
                             let stats_summary = stats.mean_across_nmonths();
                             match stats_summary {
                                 Ok(summary) => {
-                                    ui.label(
-                                        format!(
-                                            "We compute the mean over all possible intervals with lengths from {} to {}.", 
-                                            summary.min_n_months,
-                                            summary.max_n_months
-                                        )
-                                    );
                                     egui::Grid::new("rebalance-stats").show(ui, |ui| {
-                                        ui.label("with re-balance");
-                                        ui.label("without re-balance");
+                                        ui.label("#months");
+                                        ui.label("w re-balance");
+                                        ui.label("wo re-balance");
+                                        ui.label("re-balance is that much better");
                                         ui.end_row();
+                                        ui.label(format!("{:03} - {:03}", summary.min_n_months, summary.n_months_33));
+                                        ui.label(format!("{:0.2}", summary.mean_across_months_w_reb_min_33));
+                                        ui.label(format!("{:0.2}", summary.mean_across_months_wo_reb_min_33));
+                                        let factor = summary.mean_across_months_w_reb_min_33 / summary.mean_across_months_wo_reb_min_33;
+                                        ui.label(format!("{:0.3}", factor));
+                                        ui.end_row();
+                                        ui.label(format!("{:03} - {:03}", summary.n_months_33, summary.n_months_67));
+                                        ui.label(format!("{:0.2}", summary.mean_across_months_w_reb_33_67));
+                                        ui.label(format!("{:0.2}", summary.mean_across_months_wo_reb_33_67));
+                                        let factor = summary.mean_across_months_w_reb_33_67 / summary.mean_across_months_wo_reb_33_67;
+                                        ui.label(format!("{:0.3}", factor));
+                                        ui.end_row();
+                                        ui.label(format!("{:03} - {:03}", summary.n_months_67, summary.max_n_months));
+                                        ui.label(format!("{:0.2}", summary.mean_across_months_w_reb_67_max));
+                                        ui.label(format!("{:0.2}", summary.mean_across_months_wo_reb_67_max));
+                                        let factor = summary.mean_across_months_w_reb_67_max / summary.mean_across_months_wo_reb_67_max;
+                                        ui.label(format!("{:0.3}", factor));
+                                        ui.end_row();
+                                        ui.label(format!("{:03} - {:03}", summary.min_n_months, summary.max_n_months));
                                         ui.label(format!("{:0.2}", summary.mean_across_months_w_reb));
                                         ui.label(format!("{:0.2}", summary.mean_across_months_wo_reb));
+                                        let factor = summary.mean_across_months_w_reb / summary.mean_across_months_wo_reb;
+                                        ui.label(format!("{:0.3}", factor));
                                     });
-                                    let factor = summary.mean_across_months_w_reb / summary.mean_across_months_wo_reb;
-                                    ui.label(
-                                        format!("With rebalancing we obtain {:0.2} times the performance compared to not rebalancing for the given charts.", 
-                                        {factor})
-                                    );
-                                    ui.label("We ignore the timeline restrictions and any costs that might be induced by rebalancing.");
+                                    ui.label("We ignore any costs that might be induced by rebalancing.");
                                 },
                                 Err(e) => {
                                     self.status_msg = Some(format!("{e:?}"));
