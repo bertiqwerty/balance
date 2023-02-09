@@ -460,7 +460,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                                         ui.label("#months");
                                         ui.label("w re-balance");
                                         ui.label("wo re-balance");
-                                        ui.label("re-balance is that much better");
+                                        ui.label("re-balance is that much better on average");
                                         ui.end_row();
                                         ui.label(format!("{:03} - {:03}", summary.min_n_months, summary.n_months_33));
                                         ui.label(format!("{:0.2}", summary.mean_across_months_w_reb_min_33));
