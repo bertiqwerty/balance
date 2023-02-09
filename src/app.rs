@@ -243,247 +243,249 @@ impl<'a> eframe::App for BalanceApp<'a> {
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("Charts");
-            egui::CollapsingHeader::new("Simulate").show(ui, |ui| {
-                egui::Grid::new("simulate-inputs")
-                    .num_columns(2)
-                    .show(ui, |ui| {
-                        ui.label("expected yearly return [%]");
-                        ui.text_edit_singleline(&mut self.sim.expected_yearly_return);
-                        ui.end_row();
-                        ui.label("#months");
-                        ui.text_edit_singleline(&mut self.sim.n_months);
-                        ui.end_row();
-                        self.sim.start_month_slider.month_slider(ui, "start date");
-                    });
-                ui.horizontal(|ui| {
-                    ui.label("vola");
-                    ui.radio_value(&mut self.sim.vola, Vola::No, format!("{}", Vola::No));
-                    ui.radio_value(&mut self.sim.vola, Vola::Lo, format!("{}", Vola::Lo));
-                    ui.radio_value(&mut self.sim.vola, Vola::Mi, format!("{}", Vola::Mi));
-                    ui.radio_value(&mut self.sim.vola, Vola::Hi, format!("{}", Vola::Hi));
-                });
-                ui.horizontal(|ui| {
-                    if ui.button("simulate").clicked() {
-                        self.rebalance_stats = None;
-                        match self.sim.parse() {
-                            Ok(data) => {
-                                let (noise, expected_yearly_return, start_date, n_months) = data;
-                                match random_walk(expected_yearly_return, noise, n_months) {
-                                    Ok(values) => {
-                                        let tmp = Chart::new(
-                                            format!(
-                                                "{}_{}_{}",
-                                                self.sim.expected_yearly_return,
-                                                self.sim.n_months,
-                                                self.sim.vola
-                                            ),
-                                            (0..(n_months + 1))
-                                                .map(|i| date_after_nmonths(start_date, i))
-                                                .collect::<Vec<_>>(),
-                                            values,
-                                        );
-                                        self.charts.add_tmp(tmp);
-                                        self.status_msg = None;
-                                        self.charts.plot_balance = false;
-                                    }
-                                    Err(e) => {
-                                        self.status_msg = Some(format!("{e:?}"));
-                                    }
-                                };
-                            }
-                            Err(e) => {
-                                self.status_msg = Some(format!("{e:?}"));
-                            }
-                        };
-                    }
-                });
-            });
-            egui::CollapsingHeader::new("Historical Index Data").show(ui, |ui| {
-                let mut dl_button = |name, filename| {
-                    if ui.button(name).clicked() {
-                        let url = format!("{BASE_URL_WWW}/{filename}");
-                        trigger_dl(&url, self.rx.clone(), ctx.clone());
-                        self.download = Download::InProgress(name);
-                    }
-                };
-                dl_button("MSCI World", "msciworld.csv");
-                dl_button("MSCI EM", "msciem.csv");
-                dl_button("MSCI Europe", "mscieurope.csv");
-                dl_button("S&P 500", "sandp500.csv");
-                ui.horizontal(|ui| {
-                    ui.label("data from");
-                    ui.link("https://curvo.eu/backtest/")
-                });
-            });
-
-            if ui.button("add current chart to balance").clicked() {
-                self.charts.persist_tmp();
-                self.recompute_balance();
-            }
-            ui.separator();
-            ui.heading("Balance");
-            egui::Grid::new("inputs-balance-payments-interval")
-                .num_columns(2)
-                .show(ui, |ui| {
-                    ui.label("initial balance");
-                    if ui
-                        .text_edit_singleline(&mut self.payment.initial_balance.0)
-                        .changed()
-                    {
-                        self.recompute_balance();
-                        self.recompute_rebalance_stats(false);
-                    }
-                    ui.end_row();
-                    ui.label("monthly payment");
-                    if ui
-                        .text_edit_singleline(&mut self.payment.monthly_payment.0)
-                        .changed()
-                    {
-                        self.recompute_balance();
-                        self.recompute_rebalance_stats(false);
-                    }
-                    ui.end_row();
-                    ui.label("rebalance interval (months)");
-                    if ui
-                        .text_edit_singleline(&mut self.payment.rebalance_interval.0)
-                        .changed()
-                    {
-                        self.recompute_balance();
-                        self.recompute_rebalance_stats(false);
-                    }
-                    let nobalance = |ui: &mut Ui| {
-                        ui.label("final balance");
-                        ui.label("-");
-                        ui.end_row();
-                        ui.label("factor");
-                        ui.label("-");
-                    };
-                    ui.end_row();
-                    if let Some(tbom) = self.charts.total_balance_over_month() {
-                        if let Some(balance) = tbom.values().iter().last() {
-                            ui.label("final balance");
-                            ui.label(format!("{balance:0.2}"));
+            egui::ScrollArea::new([true, true]).show(ui, |ui|{
+                ui.heading("Charts");
+                egui::CollapsingHeader::new("Simulate").show(ui, |ui| {
+                    egui::Grid::new("simulate-inputs")
+                        .num_columns(2)
+                        .show(ui, |ui| {
+                            ui.label("expected yearly return [%]");
+                            ui.text_edit_singleline(&mut self.sim.expected_yearly_return);
                             ui.end_row();
-                            ui.label("factor");
-                            let initial_payment = self.payment.initial_balance.1;
-                            match self.charts.n_months_persisted() {
-                                Ok(n_months) => {
-                                    let total_monthly =
-                                        self.payment.monthly_payment.1 * (n_months - 1) as f64;
-                                    let total_yield = balance / (initial_payment + total_monthly);
-                                    ui.label(format!("{total_yield:0.2}"));
+                            ui.label("#months");
+                            ui.text_edit_singleline(&mut self.sim.n_months);
+                            ui.end_row();
+                            self.sim.start_month_slider.month_slider(ui, "start date");
+                        });
+                    ui.horizontal(|ui| {
+                        ui.label("vola");
+                        ui.radio_value(&mut self.sim.vola, Vola::No, format!("{}", Vola::No));
+                        ui.radio_value(&mut self.sim.vola, Vola::Lo, format!("{}", Vola::Lo));
+                        ui.radio_value(&mut self.sim.vola, Vola::Mi, format!("{}", Vola::Mi));
+                        ui.radio_value(&mut self.sim.vola, Vola::Hi, format!("{}", Vola::Hi));
+                    });
+                    ui.horizontal(|ui| {
+                        if ui.button("simulate").clicked() {
+                            self.rebalance_stats = None;
+                            match self.sim.parse() {
+                                Ok(data) => {
+                                    let (noise, expected_yearly_return, start_date, n_months) = data;
+                                    match random_walk(expected_yearly_return, noise, n_months) {
+                                        Ok(values) => {
+                                            let tmp = Chart::new(
+                                                format!(
+                                                    "{}_{}_{}",
+                                                    self.sim.expected_yearly_return,
+                                                    self.sim.n_months,
+                                                    self.sim.vola
+                                                ),
+                                                (0..(n_months + 1))
+                                                    .map(|i| date_after_nmonths(start_date, i))
+                                                    .collect::<Vec<_>>(),
+                                                values,
+                                            );
+                                            self.charts.add_tmp(tmp);
+                                            self.status_msg = None;
+                                            self.charts.plot_balance = false;
+                                        }
+                                        Err(e) => {
+                                            self.status_msg = Some(format!("{e:?}"));
+                                        }
+                                    };
                                 }
                                 Err(e) => {
                                     self.status_msg = Some(format!("{e:?}"));
                                 }
+                            };
+                        }
+                    });
+                });
+                egui::CollapsingHeader::new("Historical Index Data").show(ui, |ui| {
+                    let mut dl_button = |name, filename| {
+                        if ui.button(name).clicked() {
+                            let url = format!("{BASE_URL_WWW}/{filename}");
+                            trigger_dl(&url, self.rx.clone(), ctx.clone());
+                            self.download = Download::InProgress(name);
+                        }
+                    };
+                    dl_button("MSCI World", "msciworld.csv");
+                    dl_button("MSCI EM", "msciem.csv");
+                    dl_button("MSCI Europe", "mscieurope.csv");
+                    dl_button("S&P 500", "sandp500.csv");
+                    ui.horizontal(|ui| {
+                        ui.label("data from");
+                        ui.link("https://curvo.eu/backtest/")
+                    });
+                });
+
+                if ui.button("add current chart to balance").clicked() {
+                    self.charts.persist_tmp();
+                    self.recompute_balance();
+                }
+                ui.separator();
+                ui.heading("Balance");
+                egui::Grid::new("inputs-balance-payments-interval")
+                    .num_columns(2)
+                    .show(ui, |ui| {
+                        ui.label("initial balance");
+                        if ui
+                            .text_edit_singleline(&mut self.payment.initial_balance.0)
+                            .changed()
+                        {
+                            self.recompute_balance();
+                            self.recompute_rebalance_stats(false);
+                        }
+                        ui.end_row();
+                        ui.label("monthly payment");
+                        if ui
+                            .text_edit_singleline(&mut self.payment.monthly_payment.0)
+                            .changed()
+                        {
+                            self.recompute_balance();
+                            self.recompute_rebalance_stats(false);
+                        }
+                        ui.end_row();
+                        ui.label("rebalance interval (months)");
+                        if ui
+                            .text_edit_singleline(&mut self.payment.rebalance_interval.0)
+                            .changed()
+                        {
+                            self.recompute_balance();
+                            self.recompute_rebalance_stats(false);
+                        }
+                        let nobalance = |ui: &mut Ui| {
+                            ui.label("final balance");
+                            ui.label("-");
+                            ui.end_row();
+                            ui.label("factor");
+                            ui.label("-");
+                        };
+                        ui.end_row();
+                        if let Some(tbom) = self.charts.total_balance_over_month() {
+                            if let Some(balance) = tbom.values().iter().last() {
+                                ui.label("final balance");
+                                ui.label(format!("{balance:0.2}"));
+                                ui.end_row();
+                                ui.label("factor");
+                                let initial_payment = self.payment.initial_balance.1;
+                                match self.charts.n_months_persisted() {
+                                    Ok(n_months) => {
+                                        let total_monthly =
+                                            self.payment.monthly_payment.1 * (n_months - 1) as f64;
+                                        let total_yield = balance / (initial_payment + total_monthly);
+                                        ui.label(format!("{total_yield:0.2}"));
+                                    }
+                                    Err(e) => {
+                                        self.status_msg = Some(format!("{e:?}"));
+                                    }
+                                }
+                            } else {
+                                nobalance(ui);
                             }
                         } else {
                             nobalance(ui);
                         }
-                    } else {
-                        nobalance(ui);
-                    }
-                    ui.end_row();
+                        ui.end_row();
+                    });
+                egui::CollapsingHeader::new("restrict timeline").show(ui, |ui| {
+                    egui::Grid::new("restriction-of-timeline").show(ui, |ui| {
+                        if self.charts.start_slider(ui) {
+                            self.recompute_balance();
+                        }
+                        ui.end_row();
+                        if self.charts.end_slider(ui) {
+                            self.recompute_balance();
+                        }
+                    });
                 });
-            egui::CollapsingHeader::new("restrict timeline").show(ui, |ui| {
-                egui::Grid::new("restriction-of-timeline").show(ui, |ui| {
-                    if self.charts.start_slider(ui) {
-                        self.recompute_balance();
-                    }
-                    ui.end_row();
-                    if self.charts.end_slider(ui) {
-                        self.recompute_balance();
-                    }
-                });
-            });
-            if !self.charts.persisted.is_empty() {
+                if !self.charts.persisted.is_empty() {
+                    ui.separator();
+                    egui::Grid::new("grid-persistend-charts").show(ui, |ui| {
+                        if self.charts.fraction_sliders(ui) {
+                            self.recompute_balance();
+                            self.recompute_rebalance_stats(false);
+                        }
+                    });
+                }
                 ui.separator();
-                egui::Grid::new("grid-persistend-charts").show(ui, |ui| {
-                    if self.charts.fraction_sliders(ui) {
-                        self.recompute_balance();
-                        self.recompute_rebalance_stats(false);
+                if let Some(status_msg) = &self.status_msg {
+                    ui.label(status_msg);
+                } else if self.charts.persisted.is_empty() {
+                    ui.label("add simulated or historical charts to compute balances");
+                } else {
+                    ui.label("ready");
+                }
+                ui.separator();
+
+                ui.horizontal(|ui| {
+                    if ui
+                        .selectable_label(
+                            self.charts.plot_balance && self.rebalance_stats.is_none(),
+                            "balance plot",
+                        )
+                        .clicked()
+                    {
+                        self.charts.plot_balance = true;
+                        self.rebalance_stats = None;
+                    }
+                    if ui
+                        .selectable_label(
+                            !self.charts.plot_balance && self.rebalance_stats.is_none(),
+                            "charts plot",
+                        )
+                        .clicked()
+                    {
+                        self.charts.plot_balance = false;
+                        self.rebalance_stats = None;
+                    }
+
+                    if ui
+                        .selectable_label(self.rebalance_stats.is_some(), "rebalance statistics")
+                        .clicked()
+                    {
+                        self.recompute_rebalance_stats(true);
                     }
                 });
-            }
-            ui.separator();
-            if let Some(status_msg) = &self.status_msg {
-                ui.label(status_msg);
-            } else if self.charts.persisted.is_empty() {
-                ui.label("add simulated or historical charts to compute balances");
-            } else {
-                ui.label("ready");
-            }
-            ui.separator();
-
-            ui.horizontal(|ui| {
-                if ui
-                    .selectable_label(
-                        self.charts.plot_balance && self.rebalance_stats.is_none(),
-                        "balance plot",
-                    )
-                    .clicked()
-                {
-                    self.charts.plot_balance = true;
-                    self.rebalance_stats = None;
-                }
-                if ui
-                    .selectable_label(
-                        !self.charts.plot_balance && self.rebalance_stats.is_none(),
-                        "charts plot",
-                    )
-                    .clicked()
-                {
-                    self.charts.plot_balance = false;
-                    self.rebalance_stats = None;
-                }
-
-                if ui
-                    .selectable_label(self.rebalance_stats.is_some(), "rebalance statistics")
-                    .clicked()
-                {
-                    self.recompute_rebalance_stats(true);
-                }
-            });
-            if let Some(stats) = &self.rebalance_stats {
-                match stats {
-                    Ok(stats) => {
-                        let stats_summary = stats.mean_across_nmonths();
-                        match stats_summary {
-                            Ok(summary) => {
-                                ui.label(
-                                    format!(
-                                        "We compute the mean over all possible intervals with lengths from {} to {}.", 
-                                        summary.min_n_months,
-                                        summary.max_n_months
-                                    )
-                                );
-                                egui::Grid::new("rebalance-stats").show(ui, |ui| {
-                                    ui.label("with re-balance");
-                                    ui.label("without re-balance");
-                                    ui.end_row();
-                                    ui.label(format!("{:0.2}", summary.mean_across_months_w_reb));
-                                    ui.label(format!("{:0.2}", summary.mean_across_months_wo_reb));
-                                });
-                                let factor = summary.mean_across_months_w_reb / summary.mean_across_months_wo_reb;
-                                ui.label(
-                                    format!("With rebalancing we obtain {:0.2} times the performance compared to not rebalancing for the given charts.", 
-                                    {factor})
-                                );
-                                ui.label("We ignore the timeline restrictions and any costs that might be induced by rebalancing.");
-                            },
-                            Err(e) => {
-                                self.status_msg = Some(format!("{e:?}"));
+                if let Some(stats) = &self.rebalance_stats {
+                    match stats {
+                        Ok(stats) => {
+                            let stats_summary = stats.mean_across_nmonths();
+                            match stats_summary {
+                                Ok(summary) => {
+                                    ui.label(
+                                        format!(
+                                            "We compute the mean over all possible intervals with lengths from {} to {}.", 
+                                            summary.min_n_months,
+                                            summary.max_n_months
+                                        )
+                                    );
+                                    egui::Grid::new("rebalance-stats").show(ui, |ui| {
+                                        ui.label("with re-balance");
+                                        ui.label("without re-balance");
+                                        ui.end_row();
+                                        ui.label(format!("{:0.2}", summary.mean_across_months_w_reb));
+                                        ui.label(format!("{:0.2}", summary.mean_across_months_wo_reb));
+                                    });
+                                    let factor = summary.mean_across_months_w_reb / summary.mean_across_months_wo_reb;
+                                    ui.label(
+                                        format!("With rebalancing we obtain {:0.2} times the performance compared to not rebalancing for the given charts.", 
+                                        {factor})
+                                    );
+                                    ui.label("We ignore the timeline restrictions and any costs that might be induced by rebalancing.");
+                                },
+                                Err(e) => {
+                                    self.status_msg = Some(format!("{e:?}"));
+                                }
                             }
                         }
-                    }
-                    Err(e) => {
-                        self.status_msg = Some(format!("{e:?}"));
-                    }
-            };} else if let Err(e) = self.charts.plot(ui, !self.charts.plot_balance) {
-                self.status_msg = Some(format!("{e:?}"));
-            }
-            egui::warn_if_debug_build(ui);
+                        Err(e) => {
+                            self.status_msg = Some(format!("{e:?}"));
+                        }
+                };} else if let Err(e) = self.charts.plot(ui, !self.charts.plot_balance) {
+                    self.status_msg = Some(format!("{e:?}"));
+                }
+                egui::warn_if_debug_build(ui);
+            });
         });
     }
 }
