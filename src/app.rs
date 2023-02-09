@@ -316,7 +316,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                     dl_button("S&P 500", "sandp500.csv");
                     ui.horizontal(|ui| {
                         ui.label("data from");
-                        ui.link("https://curvo.eu/backtest/")
+                        ui.hyperlink("https://curvo.eu/backtest/")
                     });
                 });
 
