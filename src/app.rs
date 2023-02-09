@@ -437,20 +437,41 @@ impl<'a> eframe::App for BalanceApp<'a> {
                 }
             });
             if let Some(stats) = &self.rebalance_stats {
-                egui::Grid::new("rebalance-stats").show(ui, |ui| match stats {
+                match stats {
                     Ok(stats) => {
-                        ui.label(format!("mean with re-balance"));
-                        ui.label(format!("mean without re-balance"));
-                        ui.end_row();
-                        let (w_reb, wo_reb) = stats.mean_across_nmonths();
-                        ui.label(format!("{w_reb:0.2}"));
-                        ui.label(format!("{wo_reb:0.2}"));
+                        let stats_summary = stats.mean_across_nmonths();
+                        match stats_summary {
+                            Ok(summary) => {
+                                ui.label(
+                                    format!(
+                                        "We compute the mean over all possible intervals with lengths from {} to {}.", 
+                                        summary.min_n_months,
+                                        summary.max_n_months
+                                    )
+                                );
+                                egui::Grid::new("rebalance-stats").show(ui, |ui| {
+                                    ui.label("with re-balance");
+                                    ui.label("without re-balance");
+                                    ui.end_row();
+                                    ui.label(format!("{:0.2}", summary.mean_across_months_w_reb));
+                                    ui.label(format!("{:0.2}", summary.mean_across_months_wo_reb));
+                                });
+                                let factor = summary.mean_across_months_w_reb / summary.mean_across_months_wo_reb;
+                                ui.label(
+                                    format!("With rebalancing we obtain {:0.2} times the performance compared to not rebalancing for the given charts.", 
+                                    {factor})
+                                );
+                                ui.label("We ignore any costs that might be induced by rebalancing.");
+                            },
+                            Err(e) => {
+                                self.status_msg = Some(format!("{e:?}"));
+                            }
+                        }
                     }
                     Err(e) => {
                         self.status_msg = Some(format!("{e:?}"));
                     }
-                });
-            } else if let Err(e) = self.charts.plot(ui, !self.charts.plot_balance) {
+            };} else if let Err(e) = self.charts.plot(ui, !self.charts.plot_balance) {
                 self.status_msg = Some(format!("{e:?}"));
             }
             egui::warn_if_debug_build(ui);

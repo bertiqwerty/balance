@@ -156,15 +156,37 @@ pub struct RebalanceStats {
     pub records: Vec<RebalanceStatRecord>,
 }
 impl RebalanceStats {
-    pub fn mean_across_nmonths(&self) -> (f64, f64) {
+    pub fn mean_across_nmonths(&self) -> BlcResult<RebalanceStatsSummary> {
         let len_recs = self.records.len();
-        let x = self
+        let (mean_across_months_w_reb, mean_across_months_wo_reb) = self
             .records
             .iter()
             .map(|r| (r.mean_w_reb, r.mean_wo_reb))
             .fold((0.0, 0.0), |x, y| ((x.0 + y.0), (x.1 + y.1)));
-        (x.0 / len_recs as f64, x.1 / len_recs as f64)
+        let mean_across_months_w_reb = mean_across_months_w_reb / len_recs as f64;
+        let mean_across_months_wo_reb = mean_across_months_wo_reb / len_recs as f64;
+        let min_n_months = self
+            .records
+            .iter()
+            .map(|r| r.n_months)
+            .min()
+            .ok_or_else(|| blcerr!("no records found"))?;
+        let max_n_months = self.records.iter().map(|r| r.n_months).max().unwrap();
+
+        Ok(RebalanceStatsSummary {
+            min_n_months,
+            max_n_months,
+            mean_across_months_w_reb,
+            mean_across_months_wo_reb,
+        })
     }
+}
+
+pub struct RebalanceStatsSummary {
+    pub min_n_months: usize,
+    pub max_n_months: usize,
+    pub mean_across_months_w_reb: f64,
+    pub mean_across_months_wo_reb: f64,
 }
 
 pub fn rebalance_stats<'a>(
@@ -402,7 +424,7 @@ fn test_rebalancestats() {
     let stats = RebalanceStats {
         records: vec![stat0, stat1],
     };
-    let (mw, mwo) = stats.mean_across_nmonths();
-    assert!((mw - 3.0).abs() < 1e-12);
-    assert!((mwo - 1.5).abs() < 1e-12);
+    let stats_summary = stats.mean_across_nmonths().unwrap();
+    assert!((stats_summary.mean_across_months_w_reb - 3.0).abs() < 1e-12);
+    assert!((stats_summary.mean_across_months_wo_reb - 1.5).abs() < 1e-12);
 }

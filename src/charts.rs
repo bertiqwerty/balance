@@ -238,6 +238,9 @@ impl Chart {
         slice_by_date(&self.dates, start_date, end_date, &self.dates)
     }
 }
+
+type ComputeData<'a> = (Vec<&'a [f64]>, Vec<f64>, Vec<Vec<f64>>);
+
 #[derive(Default, Clone, Debug)]
 pub struct Charts {
     tmp: Chart,
@@ -388,13 +391,13 @@ impl Charts {
         recompute
     }
 
-    pub fn gather_compute_data<'a>(
-        &'a self,
+    fn gather_compute_data(
+        &self,
         initial_balance: f64,
         monthly_payments: f64,
         start_date: Date,
         end_date: Date,
-    ) -> BlcResult<(Vec<&'a [f64]>, Vec<f64>, Vec<Vec<f64>>)> {
+    ) -> BlcResult<ComputeData<'_>> {
         let price_devs = self
             .persisted
             .iter()
@@ -435,7 +438,7 @@ impl Charts {
                 interval: rebalance_interval,
                 fractions: &self.fractions,
             },
-            None
+            None,
         )
     }
 
