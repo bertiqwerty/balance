@@ -5,7 +5,7 @@ use std::sync::mpsc::Sender;
 
 use crate::blcerr;
 use crate::charts::{Chart, Charts};
-use crate::compute::{random_walk, RebalanceStats};
+use crate::compute::{random_walk, RebalanceStats, RebalanceStatsSummary};
 use crate::core_types::{to_blc, BlcResult};
 use crate::date::{date_after_nmonths, Date};
 use crate::io::read_csv_from_str;
@@ -124,6 +124,7 @@ pub struct BalanceApp<'a> {
     charts: Charts,
     payment: PaymentData,
     rebalance_stats: Option<BlcResult<RebalanceStats>>,
+    rebalance_stats_summary: Option<BlcResult<RebalanceStatsSummary>>,
 }
 
 impl<'a> Default for BalanceApp<'a> {
@@ -138,6 +139,7 @@ impl<'a> Default for BalanceApp<'a> {
             charts: Charts::default(),
             payment: PaymentData::new(),
             rebalance_stats: None,
+            rebalance_stats_summary: None,
         }
     }
 }
@@ -213,6 +215,9 @@ impl<'a> BalanceApp<'a> {
                     monthly_payment,
                     rebalance_interval,
                 );
+                if let Ok(stats) = &stats {
+                    self.rebalance_stats_summary = Some(stats.mean_across_nmonths());
+                }
                 self.rebalance_stats = Some(stats);
             } else {
                 let err_msg = "no rebalance interval given".to_string();
@@ -243,7 +248,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            egui::ScrollArea::new([true, true]).show(ui, |ui|{
+            egui::ScrollArea::new([true, true]).show(ui, |ui| {
                 ui.heading("Charts");
                 egui::CollapsingHeader::new("Simulate").show(ui, |ui| {
                     egui::Grid::new("simulate-inputs")
@@ -269,7 +274,8 @@ impl<'a> eframe::App for BalanceApp<'a> {
                             self.rebalance_stats = None;
                             match self.sim.parse() {
                                 Ok(data) => {
-                                    let (noise, expected_yearly_return, start_date, n_months) = data;
+                                    let (noise, expected_yearly_return, start_date, n_months) =
+                                        data;
                                     match random_walk(expected_yearly_return, noise, n_months) {
                                         Ok(values) => {
                                             let tmp = Chart::new(
@@ -374,7 +380,8 @@ impl<'a> eframe::App for BalanceApp<'a> {
                                     Ok(n_months) => {
                                         let total_monthly =
                                             self.payment.monthly_payment.1 * (n_months - 1) as f64;
-                                        let total_yield = balance / (initial_payment + total_monthly);
+                                        let total_yield =
+                                            balance / (initial_payment + total_monthly);
                                         ui.label(format!("{total_yield:0.2}"));
                                     }
                                     Err(e) => {
@@ -450,53 +457,79 @@ impl<'a> eframe::App for BalanceApp<'a> {
                         self.recompute_rebalance_stats(true);
                     }
                 });
-                if let Some(stats) = &self.rebalance_stats {
-                    match stats {
-                        Ok(stats) => {
-                            let stats_summary = stats.mean_across_nmonths();
-                            match stats_summary {
-                                Ok(summary) => {
-                                    egui::Grid::new("rebalance-stats").show(ui, |ui| {
-                                        ui.label("#months");
-                                        ui.label("w re-balance");
-                                        ui.label("wo re-balance");
-                                        ui.label("re-balance is that much better on average");
-                                        ui.end_row();
-                                        ui.label(format!("{:03} - {:03}", summary.min_n_months, summary.n_months_33));
-                                        ui.label(format!("{:0.2}", summary.mean_across_months_w_reb_min_33));
-                                        ui.label(format!("{:0.2}", summary.mean_across_months_wo_reb_min_33));
-                                        let factor = summary.mean_across_months_w_reb_min_33 / summary.mean_across_months_wo_reb_min_33;
-                                        ui.label(format!("{:0.3}", factor));
-                                        ui.end_row();
-                                        ui.label(format!("{:03} - {:03}", summary.n_months_33, summary.n_months_67));
-                                        ui.label(format!("{:0.2}", summary.mean_across_months_w_reb_33_67));
-                                        ui.label(format!("{:0.2}", summary.mean_across_months_wo_reb_33_67));
-                                        let factor = summary.mean_across_months_w_reb_33_67 / summary.mean_across_months_wo_reb_33_67;
-                                        ui.label(format!("{:0.3}", factor));
-                                        ui.end_row();
-                                        ui.label(format!("{:03} - {:03}", summary.n_months_67, summary.max_n_months));
-                                        ui.label(format!("{:0.2}", summary.mean_across_months_w_reb_67_max));
-                                        ui.label(format!("{:0.2}", summary.mean_across_months_wo_reb_67_max));
-                                        let factor = summary.mean_across_months_w_reb_67_max / summary.mean_across_months_wo_reb_67_max;
-                                        ui.label(format!("{:0.3}", factor));
-                                        ui.end_row();
-                                        ui.label(format!("{:03} - {:03}", summary.min_n_months, summary.max_n_months));
-                                        ui.label(format!("{:0.2}", summary.mean_across_months_w_reb));
-                                        ui.label(format!("{:0.2}", summary.mean_across_months_wo_reb));
-                                        let factor = summary.mean_across_months_w_reb / summary.mean_across_months_wo_reb;
-                                        ui.label(format!("{:0.3}", factor));
-                                    });
-                                    ui.label("We ignore any costs that might be induced by rebalancing.");
-                                },
-                                Err(e) => {
-                                    self.status_msg = Some(format!("{e:?}"));
-                                }
-                            }
+                if let (Some(summary), Some(_)) =
+                    (&self.rebalance_stats_summary, &self.rebalance_stats)
+                {
+                    match summary {
+                        Ok(summary) => {
+                            egui::Grid::new("rebalance-stats").show(ui, |ui| {
+                                ui.label("#months");
+                                ui.label("w re-balance");
+                                ui.label("wo re-balance");
+                                ui.label("re-balance is that much better on average");
+                                ui.end_row();
+                                ui.label(format!(
+                                    "{:03} - {:03}",
+                                    summary.min_n_months, summary.n_months_33
+                                ));
+                                ui.label(format!(
+                                    "{:0.2}",
+                                    summary.mean_across_months_w_reb_min_33
+                                ));
+                                ui.label(format!(
+                                    "{:0.2}",
+                                    summary.mean_across_months_wo_reb_min_33
+                                ));
+                                let factor = summary.mean_across_months_w_reb_min_33
+                                    / summary.mean_across_months_wo_reb_min_33;
+                                ui.label(format!("{factor:0.3}"));
+                                ui.end_row();
+                                ui.label(format!(
+                                    "{:03} - {:03}",
+                                    summary.n_months_33, summary.n_months_67
+                                ));
+                                ui.label(format!("{:0.2}", summary.mean_across_months_w_reb_33_67));
+                                ui.label(format!(
+                                    "{:0.2}",
+                                    summary.mean_across_months_wo_reb_33_67
+                                ));
+                                let factor = summary.mean_across_months_w_reb_33_67
+                                    / summary.mean_across_months_wo_reb_33_67;
+                                ui.label(format!("{factor:0.3}"));
+                                ui.end_row();
+                                ui.label(format!(
+                                    "{:03} - {:03}",
+                                    summary.n_months_67, summary.max_n_months
+                                ));
+                                ui.label(format!(
+                                    "{:0.2}",
+                                    summary.mean_across_months_w_reb_67_max
+                                ));
+                                ui.label(format!(
+                                    "{:0.2}",
+                                    summary.mean_across_months_wo_reb_67_max
+                                ));
+                                let factor = summary.mean_across_months_w_reb_67_max
+                                    / summary.mean_across_months_wo_reb_67_max;
+                                ui.label(format!("{factor:0.3}"));
+                                ui.end_row();
+                                ui.label(format!(
+                                    "{:03} - {:03}",
+                                    summary.min_n_months, summary.max_n_months
+                                ));
+                                ui.label(format!("{:0.2}", summary.mean_across_months_w_reb));
+                                ui.label(format!("{:0.2}", summary.mean_across_months_wo_reb));
+                                let factor = summary.mean_across_months_w_reb
+                                    / summary.mean_across_months_wo_reb;
+                                ui.label(format!("{factor:0.3}"));
+                            });
+                            ui.label("We ignore any costs that might be induced by re-balancing.");
                         }
                         Err(e) => {
                             self.status_msg = Some(format!("{e:?}"));
                         }
-                };} else if let Err(e) = self.charts.plot(ui, !self.charts.plot_balance) {
+                    }
+                } else if let Err(e) = self.charts.plot(ui, !self.charts.plot_balance) {
                     self.status_msg = Some(format!("{e:?}"));
                 }
                 egui::warn_if_debug_build(ui);

@@ -157,9 +157,7 @@ fn compute_mean(
     begin: usize,
     end: usize,
 ) -> f64 {
-    let s = (begin..end)
-        .map(|i| f(&records[i]))
-        .sum::<f64>();
+    let s = (begin..end).map(|i| f(&records[i])).sum::<f64>();
     s / (end - begin) as f64
 }
 
@@ -178,7 +176,7 @@ impl RebalanceStats {
         let max_n_months = self.records.iter().map(|r| r.n_months).max().unwrap();
 
         let len_records = self.records.len();
-        
+
         let n_33 = (len_records as f64 * 0.33).round() as usize;
         let n_67 = (len_records as f64 * 0.67).round() as usize;
 
