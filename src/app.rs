@@ -306,6 +306,8 @@ impl<'a> eframe::App for BalanceApp<'a> {
                             let url = format!("{BASE_URL_WWW}/{filename}");
                             trigger_dl(&url, self.rx.clone(), ctx.clone());
                             self.download = Download::InProgress(name);
+                            self.charts.plot_balance = false;
+                            self.rebalance_stats = None;
                         }
                     };
                     dl_button("MSCI World", "msciworld.csv");
