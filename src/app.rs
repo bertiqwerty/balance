@@ -316,6 +316,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                             self.rebalance_stats = None;
                         }
                     };
+                    dl_button("MSCI ACWI", "msciacwi.csv");
                     dl_button("MSCI World", "msciworld.csv");
                     dl_button("MSCI EM", "msciem.csv");
                     dl_button("MSCI Europe", "mscieurope.csv");
