@@ -533,6 +533,11 @@ impl<'a> eframe::App for BalanceApp<'a> {
                 } else if let Err(e) = self.charts.plot(ui, !self.charts.plot_balance) {
                     self.status_msg = Some(format!("{e:?}"));
                 }
+                ui.separator();
+                ui.horizontal(|ui|{
+                    ui.label("code on");
+                    ui.hyperlink_to("Github", "https://github.com/bertiqwerty/balance");
+                });
                 egui::warn_if_debug_build(ui);
             });
         });
