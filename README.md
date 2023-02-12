@@ -1,7 +1,6 @@
 # Balance
-
-[![dependency status](https://deps.rs/repo/github/bertiqwerty/balance/status.svg)](https://deps.rs/repo/github/bertiqwerty/balance)
 [![Build Status](https://github.com/bertiqwerty/balance/workflows/CI/badge.svg)](https://github.com/bertyqwerty/balance/actions?workflow=CI)
+[![dependency status](https://deps.rs/repo/github/bertiqwerty/balance/status.svg)](https://deps.rs/repo/github/bertiqwerty/balance)
 
 Simulate portfolio balance or backtest with or without rebalancing under https://www.bertiqwerty.com/balance/.
 
