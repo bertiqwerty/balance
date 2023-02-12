@@ -534,7 +534,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                     self.status_msg = Some(format!("{e:?}"));
                 }
                 ui.separator();
-                ui.horizontal(|ui|{
+                ui.horizontal(|ui| {
                     ui.label("code on");
                     ui.hyperlink_to("Github", "https://github.com/bertiqwerty/balance");
                 });

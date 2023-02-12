@@ -197,8 +197,6 @@ impl RebalanceStats {
             compute_mean(&self.records, |r| r.mean_w_reb, 0, len_records);
         let mean_across_months_wo_reb =
             compute_mean(&self.records, |r| r.mean_wo_reb, 0, len_records);
-        println!("33 {}", mean_across_months_w_reb_min_33);
-        println!("all {}", mean_across_months_w_reb);
 
         Ok(RebalanceStatsSummary {
             min_n_months,

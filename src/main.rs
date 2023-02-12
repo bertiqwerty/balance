@@ -8,11 +8,13 @@ fn main() {
     tracing_subscriber::fmt::init();
 
     let native_options = eframe::NativeOptions::default();
-    eframe::run_native(
+    if let Err(e) = eframe::run_native(
         "Balance",
         native_options,
         Box::new(|cc| Box::new(balance::BalanceApp::new(cc))),
-    );
+    ) {
+        println!("{e:?}");
+    }
 }
 
 // when compiling to web using trunk.
