@@ -2,7 +2,7 @@ use crate::{
     blcerr,
     compute::{
         adapt_pricedev_to_initial_balance, compute_balance_over_months, find_shortestlen,
-        rebalance_stats, RebalanceData, RebalanceStats,
+        rebalance_stats, RebalanceData, RebalanceStats, RebalanceTrigger,
     },
     core_types::BlcResult,
     date::{fill_between, n_month_between_dates, Date},
@@ -421,7 +421,7 @@ impl Charts {
         &self,
         initial_balance: f64,
         monthly_payments: f64,
-        rebalance_interval: usize,
+        rebalance_trigger: RebalanceTrigger,
     ) -> BlcResult<RebalanceStats> {
         let (start_date, end_date) = self.start_end_date(false)?;
         let (price_devs, initial_balances, monthly_payments) =
@@ -435,7 +435,7 @@ impl Charts {
             &initial_balances,
             Some(&monthly_payments_refs),
             RebalanceData {
-                interval: rebalance_interval,
+                trigger: rebalance_trigger,
                 fractions: &self.fractions,
             },
             10,
@@ -446,7 +446,7 @@ impl Charts {
         &mut self,
         initial_balance: f64,
         monthly_payments: f64,
-        rebalance_interval: Option<usize>,
+        rebalance_trigger: RebalanceTrigger,
     ) -> BlcResult<()> {
         let (start_date, end_date) = self.start_end_date(false)?;
         let (price_devs, initial_balances, monthly_payments) =
@@ -459,10 +459,10 @@ impl Charts {
             &price_devs,
             &initial_balances,
             Some(&monthly_payments_refs),
-            rebalance_interval.map(|ri| RebalanceData {
-                interval: ri,
+            RebalanceData {
+                trigger: rebalance_trigger,
                 fractions: &self.fractions,
-            }),
+            },
         )?;
         let (balances, payments): (Vec<f64>, Vec<f64>) = balance_over_month.unzip();
         let dates = self.persisted[0]

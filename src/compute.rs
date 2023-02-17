@@ -7,9 +7,39 @@ use rand_distr::{Distribution, Normal};
 use std::iter;
 
 #[derive(Clone, Debug)]
+pub struct RebalanceTrigger {
+    pub interval: Option<usize>,
+    pub deviation: Option<f64>,
+}
+impl<'a> RebalanceData<'a> {
+    fn is_triggered_by_interval(&self, month: usize) -> bool {
+        if let Some(interval) = self.trigger.interval {
+            interval > 0 && month % interval == 0
+        } else {
+            false
+        }
+    }
+    fn is_triggered_by_deviation(&self, balances: &[f64]) -> bool {
+        if let Some(max_dev) = self.trigger.deviation {
+            let total_balance = balances.iter().sum::<f64>();
+            let deviation = balances
+                .iter()
+                .zip(self.fractions)
+                .map(|(b, fr)| ((fr - b / total_balance).abs()))
+                .max_by(|a, b| a.partial_cmp(b).unwrap());
+            deviation > Some(max_dev)
+        } else {
+            false
+        }
+    }
+    pub fn is_triggered(&self, balances: &[f64], month: usize) -> bool {
+        self.is_triggered_by_interval(month) || self.is_triggered_by_deviation(balances)
+    }
+}
+#[derive(Clone, Debug)]
 pub struct RebalanceData<'a> {
     /// after how many months is re-balancing applied
-    pub interval: usize,
+    pub trigger: RebalanceTrigger,
     /// fractions of the indices
     pub fractions: &'a [f64],
 }
@@ -40,7 +70,7 @@ pub fn compute_balance_over_months<'a>(
     price_devs: &'a [&'a [f64]],
     initial_balances: &'a [f64],
     monthly_payments: Option<&'a [&'a [f64]]>,
-    rebalance_data: Option<RebalanceData<'a>>,
+    rebalance_data: RebalanceData<'a>,
 ) -> BlcResult<impl Iterator<Item = (f64, f64)> + 'a> {
     let total_initial_balances: f64 = initial_balances.iter().sum();
     let shortest_len = find_shortestlen(price_devs)?;
@@ -61,16 +91,14 @@ pub fn compute_balance_over_months<'a>(
             }
 
             let total: f64 = balances.iter().sum();
-            match &rebalance_data {
-                Some(rbd) if rbd.interval > 0 && i_month % rbd.interval == 0 => {
-                    rbd.fractions
-                        .iter()
-                        .zip(balances.iter_mut())
-                        .for_each(|(frac, balance)| {
-                            *balance = frac * total;
-                        });
-                }
-                _ => (),
+            if rebalance_data.is_triggered(balances, i_month) {
+                rebalance_data
+                    .fractions
+                    .iter()
+                    .zip(balances.iter_mut())
+                    .for_each(|(frac, balance)| {
+                        *balance = frac * total;
+                    });
             }
             Some((
                 balances.iter().sum::<f64>(),
@@ -230,6 +258,13 @@ pub struct RebalanceStatsSummary {
     pub mean_across_months_wo_reb_67_max: f64,
 }
 
+const NONE_REBALANCE_DATA: RebalanceData<'_> = RebalanceData {
+    trigger: RebalanceTrigger {
+        interval: None,
+        deviation: None,
+    },
+    fractions: &[],
+};
 pub fn rebalance_stats<'a>(
     price_devs: &'a [&'a [f64]],
     initial_balances: &'a [f64],
@@ -238,7 +273,7 @@ pub fn rebalance_stats<'a>(
     min_n_months: usize,
 ) -> BlcResult<RebalanceStats> {
     let shortest_len = find_shortestlen(price_devs)?;
-    let comp_bal = |start_idx: usize, n_months: usize, data: Option<RebalanceData<'a>>| {
+    let comp_bal = |start_idx: usize, n_months: usize, data: RebalanceData<'a>| {
         let price_devs_cur: Vec<&[f64]> = price_devs
             .iter()
             .map(|pd| &pd[start_idx..(start_idx + n_months)])
@@ -251,10 +286,10 @@ pub fn rebalance_stats<'a>(
         .map(|n_months| {
             let last_start_month = shortest_len - n_months + 1;
             let bsum_w_reb: f64 = (0..last_start_month)
-                .map(|start_idx| comp_bal(start_idx, n_months, Some(rebalance_data.clone())))
+                .map(|start_idx| comp_bal(start_idx, n_months, rebalance_data.clone()))
                 .sum();
             let bsum_wo_reb: f64 = (0..last_start_month)
-                .map(|start_idx| comp_bal(start_idx, n_months, None))
+                .map(|start_idx| comp_bal(start_idx, n_months, NONE_REBALANCE_DATA))
                 .sum();
             let mean_w_reb = bsum_w_reb / last_start_month as f64;
             let mean_wo_reb = bsum_wo_reb / last_start_month as f64;
@@ -268,14 +303,11 @@ pub fn rebalance_stats<'a>(
     Ok(RebalanceStats { records })
 }
 
-#[cfg(test)]
-use std::vec;
-
 fn compute_total_balance(
     price_devs: &[&[f64]],
     initial_balances: &[f64],
     monthly_payments: Option<&[&[f64]]>,
-    rebalance_data: Option<RebalanceData<'_>>,
+    rebalance_data: RebalanceData<'_>,
 ) -> (f64, f64) {
     if let Ok(total_balance_over_months) = compute_balance_over_months(
         price_devs,
@@ -312,15 +344,23 @@ fn test_compute_balance() {
         &[&world_vals, &em_vals],
         &[0.5, 0.5],
         None,
-        Some(RebalanceData {
-            interval: rebalance_interval,
+        RebalanceData {
+            trigger: RebalanceTrigger {
+                interval: Some(rebalance_interval),
+                deviation: None,
+            },
             fractions: &[0.5, 0.5],
-        }),
+        },
     );
     assert!((b - 2.25).abs() < 1e-12);
     assert!((p - 1.0).abs() < 1e-12);
 
-    let (b, p) = compute_total_balance(&[&world_vals, &em_vals], &[7.0, 3.0], None, None);
+    let (b, p) = compute_total_balance(
+        &[&world_vals, &em_vals],
+        &[7.0, 3.0],
+        None,
+        NONE_REBALANCE_DATA,
+    );
     assert!((b - 31.0).abs() < 1e-12);
     assert!((p - 10.0).abs() < 1e-12);
 
@@ -328,10 +368,13 @@ fn test_compute_balance() {
         &[&world_vals, &em_vals],
         &[0.7, 0.3],
         None,
-        Some(RebalanceData {
-            interval: rebalance_interval,
+        RebalanceData {
+            trigger: RebalanceTrigger {
+                interval: Some(rebalance_interval),
+                deviation: None,
+            },
             fractions: &[0.7, 0.3],
-        }),
+        },
     );
     assert!((x - 2.89).abs() < 1e-12);
     assert!((p - 1.0).abs() < 1e-12);
@@ -340,10 +383,13 @@ fn test_compute_balance() {
         &[&world_vals, &em_vals],
         &[1.0, 0.0],
         None,
-        Some(RebalanceData {
-            interval: rebalance_interval,
+        RebalanceData {
+            trigger: RebalanceTrigger {
+                interval: Some(rebalance_interval),
+                deviation: None,
+            },
             fractions: &[1.0, 0.0],
-        }),
+        },
     );
     assert!((x - 4.0).abs() < 1e-12);
     assert!((p - 1.0).abs() < 1e-12);
@@ -354,10 +400,13 @@ fn test_compute_balance() {
         &[&world_vals, &em_vals],
         &[0.7, 0.3],
         None,
-        Some(RebalanceData {
-            interval: 12,
+        RebalanceData {
+            trigger: RebalanceTrigger {
+                interval: Some(rebalance_interval),
+                deviation: None,
+            },
             fractions: &[0.7, 0.3],
-        }),
+        },
     );
     assert!((x - 1.0).abs() < 1e-12);
     assert!((p - 1.0).abs() < 1e-12);
@@ -374,10 +423,13 @@ fn test_compute_balance() {
         &[&world_vals, &em_vals],
         &[0.7, 0.3],
         None,
-        Some(RebalanceData {
-            interval: 11,
+        RebalanceData {
+            trigger: RebalanceTrigger {
+                interval: Some(11),
+                deviation: None,
+            },
             fractions: &[0.7, 0.3],
-        }),
+        },
     );
     assert!((x - 1.1).abs() < 1e-12);
     assert!((p - 1.0).abs() < 1e-12);
@@ -386,7 +438,8 @@ fn test_compute_balance() {
 #[test]
 fn test_compound() {
     let compound_interest: Vec<f64> = random_walk(5.0, 0.0, 240).unwrap();
-    let (b, p) = compute_total_balance(&[&compound_interest], &[10000.0], None, None);
+    let (b, p) =
+        compute_total_balance(&[&compound_interest], &[10000.0], None, NONE_REBALANCE_DATA);
     assert!((b - 26532.98).abs() < 1e-2);
     assert!((p - 10000.0).abs() < 1e-12);
 
@@ -397,7 +450,7 @@ fn test_compound() {
         &[&compound_interest],
         &[10000.0],
         Some(&[&monthly_payments]),
-        None,
+        NONE_REBALANCE_DATA,
     );
     println!("{b}");
     assert!((b - 861917.27).abs() < 1e-2);
@@ -411,14 +464,35 @@ fn test_rebalance() {
         &[&v1s, &v2s],
         &[0.5, 0.5],
         None,
-        Some(RebalanceData {
-            interval: 1,
+        RebalanceData {
+            trigger: RebalanceTrigger {
+                interval: Some(1),
+                deviation: None,
+            },
             fractions: &[0.5, 0.5],
-        }),
+        },
     )
     .unwrap()
     .unzip();
     assert!((x[2] - 0.5).abs() < 1e-12);
+    
+    let v1s = vec![1.0, 1.0, 1.0];
+    let v2s = vec![1.0, 0.5, 1.0];
+    let (x, _): (Vec<_>, Vec<_>) = compute_balance_over_months(
+        &[&v1s, &v2s],
+        &[0.5, 0.5],
+        None,
+        RebalanceData {
+            trigger: RebalanceTrigger {
+                interval: None,
+                deviation: Some(0.1),
+            },
+            fractions: &[0.5, 0.5],
+        },
+    )
+    .unwrap()
+    .unzip();
+    assert!((x[2] - 1.125).abs() < 1e-12);
 }
 
 #[test]
@@ -431,7 +505,10 @@ fn test_rebalancestats() {
         &[0.5, 0.5],
         None,
         RebalanceData {
-            interval: 1,
+            trigger: RebalanceTrigger {
+                interval: Some(1),
+                deviation: None,
+            },
             fractions: &[0.5, 0.5],
         },
         min_n_months,

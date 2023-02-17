@@ -5,7 +5,7 @@ use std::sync::mpsc::Sender;
 
 use crate::blcerr;
 use crate::charts::{Chart, Charts};
-use crate::compute::{random_walk, RebalanceStats, RebalanceStatsSummary};
+use crate::compute::{random_walk, RebalanceStats, RebalanceStatsSummary, RebalanceTrigger};
 use crate::core_types::{to_blc, BlcResult};
 use crate::date::{date_after_nmonths, Date};
 use crate::io::read_csv_from_str;
@@ -92,6 +92,7 @@ struct PaymentData {
     initial_balance: (String, f64),
     monthly_payment: (String, f64),
     rebalance_interval: (String, Option<usize>),
+    rebalance_deviation: (String, Option<f64>),
 }
 impl PaymentData {
     fn new() -> Self {
@@ -101,12 +102,19 @@ impl PaymentData {
             initial_balance: (format!("{initial_balance:0.2}"), initial_balance),
             monthly_payment: (format!("{monthly_payment:0.2}"), monthly_payment),
             rebalance_interval: ("".to_string(), None),
+            rebalance_deviation: ("".to_string(), None),
         }
     }
     fn parse(&mut self) -> BlcResult<()> {
         self.initial_balance.1 = self.initial_balance.0.parse().map_err(to_blc)?;
         self.monthly_payment.1 = self.monthly_payment.0.parse().map_err(to_blc)?;
         self.rebalance_interval.1 = self.rebalance_interval.0.parse().ok();
+        self.rebalance_deviation.1 = self
+            .rebalance_deviation
+            .0
+            .parse()
+            .ok()
+            .map(|d: f64| d / 100.0);
         Ok(())
     }
 }
@@ -189,12 +197,17 @@ impl<'a> BalanceApp<'a> {
             let PaymentData {
                 initial_balance: (_, initial_balance),
                 monthly_payment: (_, monthly_payment),
-                rebalance_interval: (_, rebalance_interval),
+                rebalance_interval: (_, interval),
+                rebalance_deviation: (_, deviation),
             } = self.payment;
-            if let Err(e) =
-                self.charts
-                    .compute_balance(initial_balance, monthly_payment, rebalance_interval)
-            {
+            if let Err(e) = self.charts.compute_balance(
+                initial_balance,
+                monthly_payment,
+                RebalanceTrigger {
+                    interval,
+                    deviation,
+                },
+            ) {
                 self.status_msg = Some(format!("{e:?}"));
             } else {
                 self.status_msg = None;
@@ -206,21 +219,25 @@ impl<'a> BalanceApp<'a> {
         let PaymentData {
             initial_balance: (_, initial_balance),
             monthly_payment: (_, monthly_payment),
-            rebalance_interval: (_, rebalance_interval),
+            rebalance_interval: (_, interval),
+            rebalance_deviation: (_, deviation),
         } = self.payment;
         if self.rebalance_stats.is_some() || always {
-            if let Some(rebalance_interval) = rebalance_interval {
+            if interval.is_some() || deviation.is_some() {
                 let stats = self.charts.compute_rebalancestats(
                     initial_balance,
                     monthly_payment,
-                    rebalance_interval,
+                    RebalanceTrigger {
+                        interval,
+                        deviation,
+                    },
                 );
                 if let Ok(stats) = &stats {
                     self.rebalance_stats_summary = Some(stats.mean_across_nmonths());
                 }
                 self.rebalance_stats = Some(stats);
             } else {
-                let err_msg = "no rebalance interval given".to_string();
+                let err_msg = "neither rebalance interval nor deviation given".to_string();
                 self.status_msg = Some(err_msg);
             }
         }
@@ -354,7 +371,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                             self.recompute_rebalance_stats(false);
                         }
                         ui.end_row();
-                        ui.label("rebalance interval (months)");
+                        ui.label("rebalance interval (#months)");
                         if ui
                             .text_edit_singleline(&mut self.payment.rebalance_interval.0)
                             .changed()
@@ -362,6 +379,16 @@ impl<'a> eframe::App for BalanceApp<'a> {
                             self.recompute_balance();
                             self.recompute_rebalance_stats(false);
                         }
+                        ui.end_row();
+                        ui.label("rebalance deviation threshold (%)");
+                        if ui
+                            .text_edit_singleline(&mut self.payment.rebalance_deviation.0)
+                            .changed()
+                        {
+                            self.recompute_balance();
+                            self.recompute_rebalance_stats(false);
+                        }
+                        ui.end_row();
                         let nobalance = |ui: &mut Ui| {
                             ui.label("final balance");
                             ui.label("-");
@@ -369,7 +396,6 @@ impl<'a> eframe::App for BalanceApp<'a> {
                             ui.label("factor");
                             ui.label("-");
                         };
-                        ui.end_row();
                         if let Some(tbom) = self.charts.total_balance_over_month() {
                             if let Some(balance) = tbom.values().iter().last() {
                                 ui.label("final balance");
@@ -464,7 +490,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                     match summary {
                         Ok(summary) => {
                             egui::Grid::new("rebalance-stats").show(ui, |ui| {
-                                ui.label("#months");
+                                ui.label("months");
                                 ui.label("w re-balance");
                                 ui.label("wo re-balance");
                                 ui.label("re-balance is that much better on average");
