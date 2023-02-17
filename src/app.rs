@@ -490,7 +490,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                     match summary {
                         Ok(summary) => {
                             egui::Grid::new("rebalance-stats").show(ui, |ui| {
-                                ui.label("months");
+                                ui.label("#months");
                                 ui.label("w re-balance");
                                 ui.label("wo re-balance");
                                 ui.label("re-balance is that much better on average");
