@@ -33,7 +33,11 @@ impl<'a> RebalanceData<'a> {
         }
     }
     pub fn is_triggered(&self, balances: &[f64], month: usize) -> bool {
-        self.is_triggered_by_interval(month) || self.is_triggered_by_deviation(balances)
+        if self.trigger.interval.is_some() && self.trigger.deviation.is_some() {
+            self.is_triggered_by_interval(month) && self.is_triggered_by_deviation(balances)
+        } else {
+            self.is_triggered_by_interval(month) || self.is_triggered_by_deviation(balances)
+        }
     }
 }
 #[derive(Clone, Debug)]
@@ -475,7 +479,7 @@ fn test_rebalance() {
     .unwrap()
     .unzip();
     assert!((x[2] - 0.5).abs() < 1e-12);
-    
+
     let v1s = vec![1.0, 1.0, 1.0];
     let v2s = vec![1.0, 0.5, 1.0];
     let (x, _): (Vec<_>, Vec<_>) = compute_balance_over_months(
