@@ -133,6 +133,7 @@ pub struct BalanceApp<'a> {
     payment: PaymentData,
     rebalance_stats: Option<BlcResult<RebalanceStats>>,
     rebalance_stats_summary: Option<BlcResult<RebalanceStatsSummary>>,
+    best_rebalance_trigger: Option<(RebalanceTrigger, f64)>,
 }
 
 impl<'a> Default for BalanceApp<'a> {
@@ -148,6 +149,7 @@ impl<'a> Default for BalanceApp<'a> {
             payment: PaymentData::new(),
             rebalance_stats: None,
             rebalance_stats_summary: None,
+            best_rebalance_trigger: None,
         }
     }
 }
@@ -191,6 +193,7 @@ impl<'a> BalanceApp<'a> {
     }
 
     fn recompute_balance(&mut self) {
+        self.best_rebalance_trigger = None;
         if let Err(e) = self.payment.parse() {
             self.status_msg = Some(format!("{e:?}"));
         } else {
@@ -380,7 +383,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                             self.recompute_rebalance_stats(false);
                         }
                         ui.end_row();
-                        ui.label("rebalance deviation threshold (%)");
+                        ui.label("rebalance deviation threshold [%]");
                         if ui
                             .text_edit_singleline(&mut self.payment.rebalance_deviation.0)
                             .changed()
@@ -458,33 +461,78 @@ impl<'a> eframe::App for BalanceApp<'a> {
                 ui.horizontal(|ui| {
                     if ui
                         .selectable_label(
-                            self.charts.plot_balance && self.rebalance_stats.is_none(),
+                            self.charts.plot_balance
+                                && self.rebalance_stats.is_none()
+                                && self.best_rebalance_trigger.is_none(),
                             "balance plot",
                         )
                         .clicked()
                     {
                         self.charts.plot_balance = true;
                         self.rebalance_stats = None;
-                    }
-                    if ui
+                        self.best_rebalance_trigger = None;
+                    } else if ui
                         .selectable_label(
-                            !self.charts.plot_balance && self.rebalance_stats.is_none(),
+                            !self.charts.plot_balance
+                                && self.rebalance_stats.is_none()
+                                && self.best_rebalance_trigger.is_none(),
                             "charts plot",
                         )
                         .clicked()
                     {
                         self.charts.plot_balance = false;
                         self.rebalance_stats = None;
-                    }
-
-                    if ui
-                        .selectable_label(self.rebalance_stats.is_some(), "rebalance statistics")
+                        self.best_rebalance_trigger = None;
+                    } else if ui
+                        .selectable_label(
+                            self.rebalance_stats.is_some() && self.best_rebalance_trigger.is_none(),
+                            "rebalance statistics",
+                        )
                         .clicked()
                     {
                         self.recompute_rebalance_stats(true);
+                    } else if ui
+                        .selectable_label(
+                            self.best_rebalance_trigger.is_some(),
+                            "best rebalance strategy",
+                        )
+                        .clicked()
+                    {
+                        let PaymentData {
+                            initial_balance: (_, initial_balance),
+                            monthly_payment: (_, monthly_payment),
+                            rebalance_interval: (_, _),
+                            rebalance_deviation: (_, _),
+                        } = self.payment;
+                        self.best_rebalance_trigger = match self
+                            .charts
+                            .find_bestrebalancetrigger(initial_balance, monthly_payment)
+                        {
+                            Ok(x) => Some(x),
+                            Err(e) => {
+                                self.status_msg =
+                                    Some(format!("could not find best trigger; {e:?}"));
+                                None
+                            }
+                        };
                     }
                 });
-                if let (Some(summary), Some(_)) =
+                if let Some((trigger, balance)) = &self.best_rebalance_trigger {
+                    egui::Grid::new("best-balance").show(ui, |ui| {
+                        ui.label("best balance");
+                        ui.label("interval [#month]");
+                        ui.label("deviation threshold [%]");
+                        ui.end_row();
+                        ui.label(format!("{balance:0.2}"));
+                        if let Some(interval) = trigger.interval {
+                            ui.label(format!("{interval}"));
+                        }
+                        if let Some(deviation) = trigger.deviation {
+                            let dev_perc = (deviation * 100.0).round() as usize; 
+                            ui.label(format!("{dev_perc}"));
+                        }
+                    });
+                } else if let (Some(summary), Some(_)) =
                     (&self.rebalance_stats_summary, &self.rebalance_stats)
                 {
                     match summary {
