@@ -346,7 +346,7 @@ pub fn best_rebalance_trigger(
             iter::repeat(n_months)
                 .zip(deviations_to_test.clone())
                 .map(move |(n_months, d)| {
-                    let fractions = balances_to_fractions(&initial_balances);
+                    let fractions = balances_to_fractions(initial_balances);
                     let rebalance_data = if n_months == 0 && d == 0 {
                         NONE_REBALANCE_DATA
                     } else {

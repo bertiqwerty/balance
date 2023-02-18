@@ -1,8 +1,8 @@
 use crate::{
     blcerr,
     compute::{
-        adapt_pricedev_to_initial_balance, compute_balance_over_months, find_shortestlen,
-        rebalance_stats, RebalanceData, RebalanceStats, RebalanceTrigger, best_rebalance_trigger,
+        adapt_pricedev_to_initial_balance, best_rebalance_trigger, compute_balance_over_months,
+        find_shortestlen, rebalance_stats, RebalanceData, RebalanceStats, RebalanceTrigger,
     },
     core_types::BlcResult,
     date::{fill_between, n_month_between_dates, Date},
@@ -429,11 +429,7 @@ impl Charts {
             .iter()
             .map(|mp| &mp[..])
             .collect::<Vec<_>>();
-        best_rebalance_trigger(
-            &price_devs,
-            &initial_balances,
-            Some(&monthly_payments_refs),
-        )
+        best_rebalance_trigger(&price_devs, &initial_balances, Some(&monthly_payments_refs))
     }
     pub fn compute_rebalancestats(
         &self,

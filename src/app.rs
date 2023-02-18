@@ -193,7 +193,6 @@ impl<'a> BalanceApp<'a> {
     }
 
     fn recompute_balance(&mut self) {
-        self.best_rebalance_trigger = None;
         if let Err(e) = self.payment.parse() {
             self.status_msg = Some(format!("{e:?}"));
         } else {
@@ -348,6 +347,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                 });
 
                 if ui.button("add current chart to balance").clicked() {
+                    self.best_rebalance_trigger = None;
                     self.charts.persist_tmp();
                     self.recompute_balance();
                 }
@@ -361,6 +361,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                             .text_edit_singleline(&mut self.payment.initial_balance.0)
                             .changed()
                         {
+                            self.best_rebalance_trigger = None;
                             self.recompute_balance();
                             self.recompute_rebalance_stats(false);
                         }
@@ -370,6 +371,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                             .text_edit_singleline(&mut self.payment.monthly_payment.0)
                             .changed()
                         {
+                            self.best_rebalance_trigger = None;
                             self.recompute_balance();
                             self.recompute_rebalance_stats(false);
                         }
@@ -429,11 +431,13 @@ impl<'a> eframe::App for BalanceApp<'a> {
                 egui::CollapsingHeader::new("restrict timeline").show(ui, |ui| {
                     egui::Grid::new("restriction-of-timeline").show(ui, |ui| {
                         if self.charts.start_slider(ui) {
+                            self.best_rebalance_trigger = None;
                             self.recompute_balance();
                             self.recompute_rebalance_stats(false);
                         }
                         ui.end_row();
                         if self.charts.end_slider(ui) {
+                            self.best_rebalance_trigger = None;
                             self.recompute_balance();
                             self.recompute_rebalance_stats(false);
                         }
@@ -443,6 +447,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                     ui.separator();
                     egui::Grid::new("grid-persistend-charts").show(ui, |ui| {
                         if self.charts.fraction_sliders(ui) {
+                            self.best_rebalance_trigger = None;
                             self.recompute_balance();
                             self.recompute_rebalance_stats(false);
                         }
@@ -528,7 +533,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                             ui.label(format!("{interval}"));
                         }
                         if let Some(deviation) = trigger.deviation {
-                            let dev_perc = (deviation * 100.0).round() as usize; 
+                            let dev_perc = (deviation * 100.0).round() as usize;
                             ui.label(format!("{dev_perc}"));
                         }
                     });
