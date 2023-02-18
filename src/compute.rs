@@ -397,11 +397,13 @@ pub fn best_rebalance_trigger(
         .ok_or(blcerr!("could not find best trigger"))?;
     let (best_dev, best_dev_balance) = triggers
         .iter()
-        .find(|(t, _)| t.deviation == best_trigger.deviation && t.interval.is_none())
+        .filter(|(t, _)| t.interval.is_none())
+        .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
         .ok_or(blcerr!("could not find best trigger"))?;
     let (best_interval, best_interval_balance) = triggers
         .iter()
-        .find(|(t, _)| t.interval == best_trigger.interval && t.deviation.is_none())
+        .filter(|(t, _)| t.deviation.is_none())
+        .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
         .ok_or(blcerr!("could not find best trigger"))?;
 
     Ok(BestRebalanceTrigger {
