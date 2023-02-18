@@ -7,7 +7,8 @@ use std::sync::mpsc::Sender;
 use crate::blcerr;
 use crate::charts::{Chart, Charts};
 use crate::compute::{
-    random_walk, BestRebalanceTrigger, RebalanceStats, RebalanceStatsSummary, RebalanceTrigger,
+    random_walk, yearly_return, BestRebalanceTrigger, RebalanceStats, RebalanceStatsSummary,
+    RebalanceTrigger,
 };
 use crate::core_types::{to_blc, BlcResult};
 use crate::date::{date_after_nmonths, Date};
@@ -401,6 +402,9 @@ impl<'a> eframe::App for BalanceApp<'a> {
                             ui.label("final balance");
                             ui.label("-");
                             ui.end_row();
+                            ui.label("yearly return [%]");
+                            ui.label("-");
+                            ui.end_row();
                             ui.label("factor");
                             ui.label("-");
                         };
@@ -409,14 +413,20 @@ impl<'a> eframe::App for BalanceApp<'a> {
                                 ui.label("final balance");
                                 ui.label(format!("{balance:0.2}"));
                                 ui.end_row();
-                                ui.label("factor");
                                 let initial_payment = self.payment.initial_balance.1;
+                                let monthly_payment = self.payment.monthly_payment.1;
                                 match self.charts.n_months_persisted() {
                                     Ok(n_months) => {
-                                        let total_monthly =
-                                            self.payment.monthly_payment.1 * (n_months - 1) as f64;
-                                        let total_yield =
-                                            balance / (initial_payment + total_monthly);
+                                        let (yearly_return_perc, total_yield) = yearly_return(
+                                            initial_payment,
+                                            monthly_payment,
+                                            n_months,
+                                            *balance,
+                                        );
+                                        ui.label("yearly reaturn [%]");
+                                        ui.label(format!("{yearly_return_perc:0.2}"));
+                                        ui.end_row();
+                                        ui.label("factor");
                                         ui.label(format!("{total_yield:0.2}"));
                                     }
                                     Err(e) => {
@@ -527,15 +537,29 @@ impl<'a> eframe::App for BalanceApp<'a> {
                 });
                 if let Some(best_trigger) = &self.best_rebalance_trigger {
                     egui::Grid::new("best-balance").show(ui, |ui| {
-                        ui.label("best balance");
+                        ui.label("(best) balance");
+                        ui.label("(best) yearly return");
                         ui.label("interval [#month]");
                         ui.label("deviation threshold [%]");
                         ui.end_row();
+                        let initial_payment = self.payment.initial_balance.1;
+                        let monthly_payment = self.payment.monthly_payment.1;
                         let toshow = iter::once(best_trigger.best)
                             .chain(iter::once(best_trigger.with_best_dev))
                             .chain(iter::once(best_trigger.with_best_interval));
                         for (trigger, balance) in toshow {
                             ui.label(format!("{balance:0.2}"));
+                            if let Ok(n_months) = self.charts.n_months_persisted() {
+                                let (yearly_return_perc, _) = yearly_return(
+                                    initial_payment,
+                                    monthly_payment,
+                                    n_months,
+                                    balance,
+                                );
+                                ui.label(format!("{yearly_return_perc:0.2}"));
+                            } else {
+                                ui.label("-");
+                            }
                             if let Some(interval) = trigger.interval {
                                 ui.label(format!("{interval}"));
                             } else {
