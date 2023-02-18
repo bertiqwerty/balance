@@ -6,7 +6,7 @@ use rand::{rngs::StdRng, SeedableRng};
 use rand_distr::{Distribution, Normal};
 use std::iter;
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct RebalanceTrigger {
     pub interval: Option<usize>,
     pub deviation: Option<f64>,
@@ -24,7 +24,7 @@ impl RebalanceTrigger {
             deviation: None,
         }
     }
-    fn from_deviation(deviation: f64) -> Self {
+    fn from_dev(deviation: f64) -> Self {
         RebalanceTrigger {
             interval: None,
             deviation: Some(deviation),
@@ -333,15 +333,21 @@ pub fn rebalance_stats<'a>(
     Ok(RebalanceStats { records })
 }
 
+pub struct BestRebalanceTrigger {
+    pub best: (RebalanceTrigger, f64),
+    pub with_best_dev: (RebalanceTrigger, f64),
+    pub with_best_interval: (RebalanceTrigger, f64),
+}
+
 pub fn best_rebalance_trigger(
     price_devs: &[&[f64]],
     initial_balances: &[f64],
     monthly_payments: Option<&[&[f64]]>,
-) -> BlcResult<(RebalanceTrigger, f64)> {
+) -> BlcResult<BestRebalanceTrigger> {
     let shortest_len = find_shortestlen(price_devs)?;
-    let months_to_test = 1..(shortest_len / 2);
+    let months_to_test = 0..(shortest_len / 2);
     let deviations_to_test = (0..10).chain((20..50).step_by(10)).chain(iter::once(75));
-    months_to_test
+    let triggers: Vec<(RebalanceTrigger, f64)> = months_to_test
         .flat_map(move |n_months| {
             iter::repeat(n_months)
                 .zip(deviations_to_test.clone())
@@ -351,7 +357,7 @@ pub fn best_rebalance_trigger(
                         NONE_REBALANCE_DATA
                     } else {
                         let trigger = if n_months == 0 {
-                            RebalanceTrigger::from_deviation(d as f64 / 100.0)
+                            RebalanceTrigger::from_dev(d as f64 / 100.0)
                         } else if d == 0 {
                             RebalanceTrigger::from_interval(n_months)
                         } else {
@@ -362,7 +368,7 @@ pub fn best_rebalance_trigger(
                             fractions: &fractions,
                         }
                     };
-                    let trigger = rebalance_data.trigger.clone();
+                    let trigger = rebalance_data.trigger;
                     let (balance, _) = compute_total_balance(
                         price_devs,
                         initial_balances,
@@ -372,8 +378,25 @@ pub fn best_rebalance_trigger(
                     (trigger, balance)
                 })
         })
+        .collect();
+    let (best_trigger, best_balance) = triggers
+        .iter()
         .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
-        .ok_or(blcerr!("could not find best trigger"))
+        .ok_or(blcerr!("could not find best trigger"))?;
+    let (best_dev, best_dev_balance) = triggers
+        .iter()
+        .find(|(t, _)| t.deviation == best_trigger.deviation && t.interval.is_none())
+        .ok_or(blcerr!("could not find best trigger"))?;
+    let (best_interval, best_interval_balance) = triggers
+        .iter()
+        .find(|(t, _)| t.interval == best_trigger.interval && t.deviation.is_none())
+        .ok_or(blcerr!("could not find best trigger"))?;
+
+    Ok(BestRebalanceTrigger {
+        best: (*best_trigger, *best_balance),
+        with_best_dev: (*best_dev, *best_dev_balance),
+        with_best_interval: (*best_interval, *best_interval_balance),
+    })
 }
 
 fn compute_total_balance(
@@ -572,7 +595,9 @@ fn test_rebalance() {
 fn test_besttrigger() {
     let v1s = vec![1.0, 1.0, 1.0, 1.0, 0.5, 1.0];
     let v2s = vec![1.0, 1.0, 1.0, 1.0, 1.0, 1.0];
-    let (_, balance) = best_rebalance_trigger(&[&v1s, &v2s], &[0.5, 0.5], None).unwrap();
+    let (_, balance) = best_rebalance_trigger(&[&v1s, &v2s], &[0.5, 0.5], None)
+        .unwrap()
+        .best;
     assert!((balance - 1.125).abs() < 1e-12);
 }
 #[test]

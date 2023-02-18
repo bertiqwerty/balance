@@ -1,11 +1,14 @@
 use egui::{Context, Ui};
 use std::fmt::Display;
+use std::iter;
 use std::sync::mpsc;
 use std::sync::mpsc::Sender;
 
 use crate::blcerr;
 use crate::charts::{Chart, Charts};
-use crate::compute::{random_walk, RebalanceStats, RebalanceStatsSummary, RebalanceTrigger};
+use crate::compute::{
+    random_walk, BestRebalanceTrigger, RebalanceStats, RebalanceStatsSummary, RebalanceTrigger,
+};
 use crate::core_types::{to_blc, BlcResult};
 use crate::date::{date_after_nmonths, Date};
 use crate::io::read_csv_from_str;
@@ -133,7 +136,7 @@ pub struct BalanceApp<'a> {
     payment: PaymentData,
     rebalance_stats: Option<BlcResult<RebalanceStats>>,
     rebalance_stats_summary: Option<BlcResult<RebalanceStatsSummary>>,
-    best_rebalance_trigger: Option<(RebalanceTrigger, f64)>,
+    best_rebalance_trigger: Option<BestRebalanceTrigger>,
 }
 
 impl<'a> Default for BalanceApp<'a> {
@@ -376,7 +379,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                             self.recompute_rebalance_stats(false);
                         }
                         ui.end_row();
-                        ui.label("rebalance interval (#months)");
+                        ui.label("rebalance interval [#months]");
                         if ui
                             .text_edit_singleline(&mut self.payment.rebalance_interval.0)
                             .changed()
@@ -522,19 +525,29 @@ impl<'a> eframe::App for BalanceApp<'a> {
                         };
                     }
                 });
-                if let Some((trigger, balance)) = &self.best_rebalance_trigger {
+                if let Some(best_trigger) = &self.best_rebalance_trigger {
                     egui::Grid::new("best-balance").show(ui, |ui| {
                         ui.label("best balance");
                         ui.label("interval [#month]");
                         ui.label("deviation threshold [%]");
                         ui.end_row();
-                        ui.label(format!("{balance:0.2}"));
-                        if let Some(interval) = trigger.interval {
-                            ui.label(format!("{interval}"));
-                        }
-                        if let Some(deviation) = trigger.deviation {
-                            let dev_perc = (deviation * 100.0).round() as usize;
-                            ui.label(format!("{dev_perc}"));
+                        let toshow = iter::once(best_trigger.best)
+                            .chain(iter::once(best_trigger.with_best_dev))
+                            .chain(iter::once(best_trigger.with_best_interval));
+                        for (trigger, balance) in toshow {
+                            ui.label(format!("{balance:0.2}"));
+                            if let Some(interval) = trigger.interval {
+                                ui.label(format!("{interval}"));
+                            } else {
+                                ui.label("None");
+                            }
+                            if let Some(deviation) = trigger.deviation {
+                                let dev_perc = (deviation * 100.0).round() as usize;
+                                ui.label(format!("{dev_perc}"));
+                            } else {
+                                ui.label("None");
+                            }
+                            ui.end_row();
                         }
                     });
                 } else if let (Some(summary), Some(_)) =

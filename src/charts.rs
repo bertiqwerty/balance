@@ -2,7 +2,8 @@ use crate::{
     blcerr,
     compute::{
         adapt_pricedev_to_initial_balance, best_rebalance_trigger, compute_balance_over_months,
-        find_shortestlen, rebalance_stats, RebalanceData, RebalanceStats, RebalanceTrigger,
+        find_shortestlen, rebalance_stats, BestRebalanceTrigger, RebalanceData, RebalanceStats,
+        RebalanceTrigger,
     },
     core_types::BlcResult,
     date::{fill_between, n_month_between_dates, Date},
@@ -421,7 +422,7 @@ impl Charts {
         &self,
         initial_balance: f64,
         monthly_payments: f64,
-    ) -> BlcResult<(RebalanceTrigger, f64)> {
+    ) -> BlcResult<BestRebalanceTrigger> {
         let (start_date, end_date) = self.start_end_date(false)?;
         let (price_devs, initial_balances, monthly_payments) =
             self.gather_compute_data(initial_balance, monthly_payments, start_date, end_date)?;
