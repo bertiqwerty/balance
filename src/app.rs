@@ -272,7 +272,8 @@ impl<'a> eframe::App for BalanceApp<'a> {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::ScrollArea::new([true, true]).show(ui, |ui| {
-                ui.heading("Charts");
+                ui.heading("1. Add Charts");
+                ui.label(" ");
                 egui::CollapsingHeader::new("Simulate").show(ui, |ui| {
                     egui::Grid::new("simulate-inputs")
                         .num_columns(2)
@@ -356,7 +357,8 @@ impl<'a> eframe::App for BalanceApp<'a> {
                     self.recompute_balance();
                 }
                 ui.separator();
-                ui.heading("Balance");
+                ui.heading("2. Set (Re-)Balance");
+                ui.label(" ");
                 egui::Grid::new("inputs-balance-payments-interval")
                     .num_columns(2)
                     .show(ui, |ui| {
@@ -475,6 +477,8 @@ impl<'a> eframe::App for BalanceApp<'a> {
                     ui.label("ready");
                 }
                 ui.separator();
+                ui.heading("3. Investigate Results");
+                ui.label(" ");
 
                 ui.horizontal(|ui| {
                     if ui
