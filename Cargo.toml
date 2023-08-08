@@ -8,10 +8,10 @@ rust-version = "1.65"
 
 [dependencies]
 csv = "1.1.6"
-egui = "0.21.0"
+egui = "0.22.0"
 rand = { version = "0.8.5", default-features = false, features = ["std_rng"] }
 rand_distr = { version = "0.4.3", default-features = false}
-eframe = { version = "0.21.0", default-features = false, features = [
+eframe = { version = "0.22.0", default-features = false, features = [
     # "accesskit",     # Make egui comptaible with screen readers. NOTE: adds a lot of dependencies.
     "default_fonts", # Embed the default egui fonts.
     "glow",          # Use the glow rendering backend. Alternative: "wgpu".
@@ -25,7 +25,7 @@ wasm-bindgen-futures = "0.4"
 wasm-bindgen = "0.2.83"
 js-sys = "0.3.60"
 # wasm-bindgen-test = "0.3.33"
-ehttp = "0.2.0"
+ehttp = "0.3.0"
 # native:
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tracing-subscriber = "0.3"
