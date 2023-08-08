@@ -5,3 +5,7 @@
 Simulate portfolio balance or backtest with or without rebalancing under https://www.bertiqwerty.com/balance/.
 
 <sub>Created with [eframe](https://github.com/emilk/egui/tree/master/crates/eframe), a framework for writing apps using [egui](https://github.com/emilk/egui/).</sub>
+
+## Build WASM
+
+See https://github.com/emilk/eframe_template.
