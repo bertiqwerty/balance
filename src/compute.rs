@@ -213,7 +213,7 @@ pub fn random_walk(
         let rv = d.sample(&mut rv_rng);
         res[i] = (res[i - 1] * rv).max(1e-1);
 
-        if is_return_indpendent && sigma - sigma_mean > 0.0 {
+        if !is_return_indpendent && sigma - sigma_mean > 0.0 {
             let actual_total_return: f64 = (1..=i).map(|j| res[j] / res[j - 1]).product::<f64>().powf(1.0/(n_months-i) as f64);
             let expected_total_return = expected_monthly_return.powf(n_months as f64 / (n_months-i) as f64);
             mu = expected_total_return / actual_total_return;
