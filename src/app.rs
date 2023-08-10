@@ -73,7 +73,7 @@ impl SimInput {
         SimInput {
             vola: Vola::Mi,
             expected_yearly_return: "7.0".to_string(),
-            is_eyr_independent: false,
+            is_eyr_independent: true,
             n_months: "360".to_string(),
             start_month_slider: MonthSlider::new(
                 Date::new(1950, 1).unwrap(),
