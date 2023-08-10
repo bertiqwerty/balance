@@ -304,9 +304,19 @@ impl<'a> eframe::App for BalanceApp<'a> {
                             self.rebalance_stats = None;
                             match self.sim.parse() {
                                 Ok(data) => {
-                                    let (noise, expected_yearly_return, is_eyr_independent, start_date, n_months) =
-                                        data;
-                                    match random_walk(expected_yearly_return, is_eyr_independent, noise, n_months) {
+                                    let (
+                                        noise,
+                                        expected_yearly_return,
+                                        is_eyr_independent,
+                                        start_date,
+                                        n_months,
+                                    ) = data;
+                                    match random_walk(
+                                        expected_yearly_return,
+                                        is_eyr_independent,
+                                        noise,
+                                        n_months,
+                                    ) {
                                         Ok(values) => {
                                             let tmp = Chart::new(
                                                 format!(
