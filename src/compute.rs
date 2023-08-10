@@ -200,7 +200,6 @@ pub fn random_walk(
     let start_price = 1.0;
     let mut res = vec![start_price; n_months + 1];
     let expected_monthly_return = (1.0 + (expected_yearly_return / 100.0)).powf(1.0 / 12.0);
-    // let mut mu_base = 1.0 + expected_yearly_return;
     let mut mu = expected_monthly_return;
     for (i, sigma) in (1..(n_months + 1)).zip(sigma_distribution.sample_iter(&mut sigma_rng)) {
         for i in 0..9 {
@@ -214,8 +213,12 @@ pub fn random_walk(
         res[i] = (res[i - 1] * rv).max(1e-1);
 
         if !is_return_indpendent && sigma - sigma_mean > 0.0 {
-            let actual_total_return: f64 = (1..=i).map(|j| res[j] / res[j - 1]).product::<f64>().powf(1.0/(n_months-i) as f64);
-            let expected_total_return = expected_monthly_return.powf(n_months as f64 / (n_months-i) as f64);
+            let actual_total_return: f64 = (1..=i)
+                .map(|j| res[j] / res[j - 1])
+                .product::<f64>()
+                .powf(1.0 / (n_months - i) as f64);
+            let expected_total_return =
+                expected_monthly_return.powf(n_months as f64 / (n_months - i) as f64);
             mu = expected_total_return / actual_total_return;
         }
     }
