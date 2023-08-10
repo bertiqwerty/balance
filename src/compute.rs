@@ -189,6 +189,7 @@ const SIGMA_WINDOW_SIZE: usize = 12;
 
 pub fn random_walk(
     expected_yearly_return: f64,
+    is_return_indpendent: bool,
     sigma_mean: f64,
     n_months: usize,
 ) -> BlcResult<Vec<f64>> {
@@ -198,7 +199,9 @@ pub fn random_walk(
     let mut rv_rng = StdRng::seed_from_u64(unix_to_now_nanos()?);
     let start_price = 1.0;
     let mut res = vec![start_price; n_months + 1];
-
+    let expected_monthly_return = (1.0 + (expected_yearly_return / 100.0)).powf(1.0 / 12.0);
+    // let mut mu_base = 1.0 + expected_yearly_return;
+    let mut mu = expected_monthly_return;
     for (i, sigma) in (1..(n_months + 1)).zip(sigma_distribution.sample_iter(&mut sigma_rng)) {
         for i in 0..9 {
             last_sigmas[i] = last_sigmas[i + 1];
@@ -206,10 +209,15 @@ pub fn random_walk(
         last_sigmas[9] = sigma;
         last_sigmas.sort_by(|a, b| a.partial_cmp(b).unwrap());
         let sigma = last_sigmas[SIGMA_WINDOW_SIZE / 2].abs();
-        let mu = (1.0 + expected_yearly_return / 100.0).powf(1.0 / 12.0);
         let d = Normal::new(mu, sigma).map_err(to_blc)?;
         let rv = d.sample(&mut rv_rng);
         res[i] = (res[i - 1] * rv).max(1e-1);
+
+        if is_return_indpendent && sigma - sigma_mean > 0.0 {
+            let actual_total_return: f64 = (1..=i).map(|j| res[j] / res[j - 1]).product::<f64>().powf(1.0/(n_months-i) as f64);
+            let expected_total_return = expected_monthly_return.powf(n_months as f64 / (n_months-i) as f64);
+            mu = expected_total_return / actual_total_return;
+        }
     }
     Ok(res)
 }
@@ -547,13 +555,13 @@ fn test_compute_balance() {
 
 #[test]
 fn test_compound() {
-    let compound_interest: Vec<f64> = random_walk(5.0, 0.0, 240).unwrap();
+    let compound_interest: Vec<f64> = random_walk(5.0, true, 0.0, 240).unwrap();
     let (b, p) =
         compute_total_balance(&[&compound_interest], &[10000.0], None, NONE_REBALANCE_DATA);
     assert!((b - 26532.98).abs() < 1e-2);
     assert!((p - 10000.0).abs() < 1e-12);
 
-    let compound_interest: Vec<f64> = random_walk(5.0, 0.0, 360).unwrap();
+    let compound_interest: Vec<f64> = random_walk(5.0, true, 0.0, 360).unwrap();
     let ci_len = compound_interest.len();
     let monthly_payments: Vec<f64> = vec![1000.0; ci_len - 1];
     let (b, _) = compute_total_balance(

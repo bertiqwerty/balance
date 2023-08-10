@@ -64,6 +64,7 @@ fn trigger_dl(url: &str, rx: Sender<ehttp::Result<ehttp::Response>>, ctx: Contex
 struct SimInput {
     vola: Vola,
     expected_yearly_return: String,
+    is_eyr_independent: bool,
     start_month_slider: MonthSlider,
     n_months: String,
 }
@@ -72,6 +73,7 @@ impl SimInput {
         SimInput {
             vola: Vola::Mi,
             expected_yearly_return: "7.0".to_string(),
+            is_eyr_independent: false,
             n_months: "360".to_string(),
             start_month_slider: MonthSlider::new(
                 Date::new(1950, 1).unwrap(),
@@ -80,10 +82,11 @@ impl SimInput {
             ),
         }
     }
-    fn parse(&self) -> BlcResult<(f64, f64, Date, usize)> {
+    fn parse(&self) -> BlcResult<(f64, f64, bool, Date, usize)> {
         Ok((
             self.vola.to_float(),
             self.expected_yearly_return.parse().map_err(to_blc)?,
+            self.is_eyr_independent,
             self.start_month_slider
                 .selected_date()
                 .ok_or_else(|| blcerr!("no date selected"))?,
@@ -281,6 +284,9 @@ impl<'a> eframe::App for BalanceApp<'a> {
                             ui.label("expected yearly return [%]");
                             ui.text_edit_singleline(&mut self.sim.expected_yearly_return);
                             ui.end_row();
+                            ui.label("Return independent of previous returns?");
+                            ui.checkbox(&mut self.sim.is_eyr_independent, "");
+                            ui.end_row();
                             ui.label("#months");
                             ui.text_edit_singleline(&mut self.sim.n_months);
                             ui.end_row();
@@ -298,9 +304,9 @@ impl<'a> eframe::App for BalanceApp<'a> {
                             self.rebalance_stats = None;
                             match self.sim.parse() {
                                 Ok(data) => {
-                                    let (noise, expected_yearly_return, start_date, n_months) =
+                                    let (noise, expected_yearly_return, is_eyr_independent, start_date, n_months) =
                                         data;
-                                    match random_walk(expected_yearly_return, noise, n_months) {
+                                    match random_walk(expected_yearly_return, is_eyr_independent, noise, n_months) {
                                         Ok(values) => {
                                             let tmp = Chart::new(
                                                 format!(
@@ -655,8 +661,10 @@ impl<'a> eframe::App for BalanceApp<'a> {
                 }
                 ui.separator();
                 ui.horizontal(|ui| {
-                    ui.label("code on");
+                    ui.label("Code on");
                     ui.hyperlink_to("Github", "https://github.com/bertiqwerty/balance");
+                    ui.label("-");
+                    ui.hyperlink_to("Impressum", "https://bertiqwerty.com/impressum");
                 });
                 egui::warn_if_debug_build(ui);
             });
