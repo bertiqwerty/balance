@@ -1,4 +1,4 @@
-use egui::{Context, Ui};
+use egui::{Context, Ui, Response, RichText};
 use std::fmt::Display;
 use std::iter;
 use std::sync::mpsc;
@@ -59,6 +59,13 @@ fn trigger_dl(url: &str, rx: Sender<ehttp::Result<ehttp::Response>>, ctx: Contex
         };
         ctx.request_repaint();
     });
+}
+
+fn heading2(ui: &mut Ui, s: &str) -> Response {
+    ui.heading(RichText::new(s).strong().size(18.0))
+}
+fn heading(ui: &mut Ui, s: &str) -> Response {
+    ui.heading(RichText::new(s).strong().size(30.0))
 }
 
 struct SimInput {
@@ -275,8 +282,16 @@ impl<'a> eframe::App for BalanceApp<'a> {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::ScrollArea::new([true, true]).show(ui, |ui| {
-                ui.heading("1. Add Charts");
-                ui.label(" ");
+                heading(ui, "Balance");
+                if let Some(status_msg) = &self.status_msg {
+                    ui.label(status_msg);
+                } else if self.charts.persisted.is_empty() {
+                    ui.label("add simulated or historical charts to compute balances");
+                } else {
+                    ui.label("ready for (re-)balance computation");
+                }
+                ui.separator();
+                heading2(ui, "1. Add Charts");
                 egui::CollapsingHeader::new("Simulate").show(ui, |ui| {
                     egui::Grid::new("simulate-inputs")
                         .num_columns(2)
@@ -373,8 +388,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                     self.recompute_balance();
                 }
                 ui.separator();
-                ui.heading("2. Set (Re-)Balance");
-                ui.label(" ");
+                heading2(ui, "2. Set (Re-)Balance");
                 egui::Grid::new("inputs-balance-payments-interval")
                     .num_columns(2)
                     .show(ui, |ui| {
@@ -485,15 +499,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                     });
                 }
                 ui.separator();
-                if let Some(status_msg) = &self.status_msg {
-                    ui.label(status_msg);
-                } else if self.charts.persisted.is_empty() {
-                    ui.label("add simulated or historical charts to compute balances");
-                } else {
-                    ui.label("ready");
-                }
-                ui.separator();
-                ui.heading("3. Investigate Results");
+                heading2(ui, "3. Investigate Results");
                 ui.label(" ");
 
                 ui.horizontal(|ui| {
