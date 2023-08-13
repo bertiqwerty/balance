@@ -1,4 +1,4 @@
-use egui::{Context, Ui, Response, RichText};
+use egui::{Context, Response, RichText, Ui};
 use std::fmt::Display;
 use std::iter;
 use std::sync::mpsc;
@@ -288,7 +288,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                 } else if self.charts.persisted.is_empty() {
                     ui.label("add simulated or historical charts to compute balances");
                 } else {
-                    ui.label("ready for (re-)balance computation");
+                    ui.label("balance computation ready");
                 }
                 ui.separator();
                 heading2(ui, "1. Add Charts");
