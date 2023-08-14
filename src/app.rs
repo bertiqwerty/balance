@@ -26,20 +26,6 @@ use {
 // const BASE_URL_WWW: &str = "http://localhost:8000/data";
 const BASE_URL_WWW: &str = "https://www.bertiqwerty.com/data";
 
-fn vec_to_string<T>(dates: &[T]) -> String
-where
-    T: Display,
-{
-    match dates
-        .iter()
-        .map(|d| format!("{d}"))
-        .reduce(|s1, s2| format!("{s1},{s2}"))
-    {
-        Some(s) => s,
-        None => "".to_string(),
-    }
-}
-
 #[cfg(target_arch = "wasm32")]
 fn download_str(s: &str, tmp_filename: &str) -> Result<(), JsValue> {
     let blob = Blob::new_with_str_sequence(&serde_wasm_bindgen::to_value(&[s])?)?;
@@ -56,13 +42,9 @@ fn download_str(s: &str, tmp_filename: &str) -> Result<(), JsValue> {
 
 fn export_csv(charts: &Charts) -> BlcResult<()> {
     let tmp_filename = "charts.csv";
-    let date_tmp_str = vec_to_string(charts.tmp().dates());
-    let val_tmp_str = vec_to_string(charts.tmp().values());
-    let mut s = format!("{date_tmp_str}\n{val_tmp_str}\n");
+    let mut s = charts.tmp().to_string();
     for c in &charts.persisted {
-        let date_str = vec_to_string(c.dates());
-        let val_str = vec_to_string(c.values());
-        let c_str = format!("{date_str}\n{val_str}\n");
+        let c_str = c.to_string();
         s = format!("{s}{c_str}")
     }
 
@@ -131,6 +113,7 @@ fn trigger_dl(url: &str, rx: Sender<ehttp::Result<ehttp::Response>>, ctx: Contex
 fn heading2(ui: &mut Ui, s: &str) -> Response {
     ui.heading(RichText::new(s).strong().size(18.0))
 }
+
 fn heading(ui: &mut Ui, s: &str) -> Response {
     ui.heading(RichText::new(s).strong().size(30.0))
 }

@@ -13,7 +13,7 @@ use egui::{
     plot::{Corner, Legend, Line, PlotPoints},
     Ui,
 };
-use std::{iter, mem, ops::RangeInclusive, str::FromStr};
+use std::{fmt::Display, iter, mem, ops::RangeInclusive, str::FromStr};
 
 /// Intersects all timelines of all persisted charts
 fn start_end_date<'a>(charts: impl Iterator<Item = &'a Chart> + Clone) -> BlcResult<(Date, Date)> {
@@ -187,6 +187,31 @@ fn slice_by_date<'a, T>(
     Ok(&to_be_sliced[start_idx..end_idx])
 }
 
+enum SeriesType {
+    Dates,
+    Values,
+}
+impl SeriesType {
+    fn name(&self, name: &str) -> String {
+        match self {
+            SeriesType::Dates => format!("dates_{name}"),
+            SeriesType::Values => format!("vals_{name}"),
+        }
+    }
+}
+
+fn vec_to_string<T>(series_type: SeriesType, name: &str, dates: &[T]) -> Option<String>
+where
+    T: Display,
+{
+    let name = series_type.name(name);
+    dates
+        .iter()
+        .map(|d| format!("{d}"))
+        .reduce(|s1, s2| format!("{s1},{s2}"))
+        .map(|s| format!("{name},{s}"))
+}
+
 #[derive(Default, Debug, Clone)]
 pub struct Chart {
     name: String,
@@ -198,9 +223,6 @@ impl Chart {
         &self.name
     }
 
-    pub fn dates(&self) -> &Vec<Date> {
-        &self.dates
-    }
     pub fn values(&self) -> &Vec<f64> {
         &self.values
     }
@@ -240,6 +262,19 @@ impl Chart {
 
     fn sliced_dates(&self, start_date: Date, end_date: Date) -> BlcResult<&[Date]> {
         slice_by_date(&self.dates, start_date, end_date, &self.dates)
+    }
+}
+
+impl Display for Chart {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let dates_str = vec_to_string(SeriesType::Dates, &self.name, &self.dates);
+        let vals_str = vec_to_string(SeriesType::Values, &self.name, &self.values);
+        if let (Some(dates_str), Some(vals_str)) = (dates_str, vals_str) {
+            let s = format!("{dates_str}\n{vals_str}\n");
+            f.write_str(&s)
+        } else {
+            f.write_str("")
+        }
     }
 }
 

@@ -2,3 +2,4 @@
 /target
 /dist
 webdriver.json
+.DS_Store
