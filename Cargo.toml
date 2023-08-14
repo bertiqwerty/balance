@@ -10,7 +10,7 @@ rust-version = "1.65"
 csv = "1.1.6"
 egui = "0.22.0"
 rand = { version = "0.8.5", default-features = false, features = ["std_rng"] }
-rand_distr = { version = "0.4.3", default-features = false}
+rand_distr = { version = "0.4.3", default-features = false }
 eframe = { version = "0.22.0", default-features = false, features = [
     # "accesskit",     # Make egui comptaible with screen readers. NOTE: adds a lot of dependencies.
     "default_fonts", # Embed the default egui fonts.
@@ -18,9 +18,19 @@ eframe = { version = "0.22.0", default-features = false, features = [
     # "persistence",   # Enable restoring app state when restarting the app.
 ] }
 # You only need serde if you want app persistence:
-# serde = { version = "1", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
 # ureq = "2.6.2"
-# web-sys = {version = "0.3.60", features = ["Window"] }
+web-sys = { version = "0.3.64", features = [
+    "Window",
+    "Document",
+    "Url",
+    "Blob",
+    "Location",
+    "Element",
+    "HtmlElement",
+    "CssStyleDeclaration",
+] }
+serde-wasm-bindgen = "0.4"
 wasm-bindgen-futures = "0.4"
 wasm-bindgen = "0.2.83"
 js-sys = "0.3.60"

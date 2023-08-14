@@ -2,6 +2,7 @@ use crate::{
     core_types::{to_blc, BlcResult},
     date::Date,
 };
+use std::str::FromStr;
 
 pub fn read_csv_from_str(csv: &str) -> BlcResult<(Vec<Date>, Vec<f64>)> {
     let reader = csv::Reader::from_reader(csv.as_bytes());

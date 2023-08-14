@@ -1,9 +1,3 @@
-use egui::{Context, Response, RichText, Ui};
-use std::fmt::Display;
-use std::iter;
-use std::sync::mpsc;
-use std::sync::mpsc::Sender;
-
 use crate::blcerr;
 use crate::charts::{Chart, Charts};
 use crate::compute::{
@@ -14,6 +8,79 @@ use crate::core_types::{to_blc, BlcResult};
 use crate::date::{date_after_nmonths, Date};
 use crate::io::read_csv_from_str;
 use crate::month_slider::{MonthSlider, SliderState};
+use egui::{Context, Response, RichText, Ui};
+use std::fmt::Display;
+use std::fs::File;
+use std::io::Write;
+use std::iter;
+use std::sync::mpsc;
+use std::sync::mpsc::Sender;
+use wasm_bindgen::prelude::*;
+
+#[cfg(target_arch = "wasm32")]
+use {
+    wasm_bindgen::JsValue,
+    web_sys::{Blob, HtmlElement, Url},
+};
+
+const BASE_URL_WWW: &str = "http://localhost:8000/data";
+// const BASE_URL_WWW: &str = "https://www.bertiqwerty.com/data";
+
+fn vec_to_string<T>(dates: &[T]) -> String
+where
+    T: Display,
+{
+    match dates
+        .iter()
+        .map(|d| format!("{d}"))
+        .reduce(|s1, s2| format!("{s1},{s2}"))
+    {
+        Some(s) => s,
+        None => "".to_string(),
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn download_str(s: &str, tmp_filename: &str) -> Result<(), JsValue> {
+    let blob = Blob::new_with_str_sequence(&serde_wasm_bindgen::to_value(&[s])?)?;
+    let url = Url::create_object_url_with_blob(&blob)?;
+
+    let document = web_sys::window().unwrap().document().unwrap();
+    let download_link = document.create_element("a")?.dyn_into::<HtmlElement>()?;
+    download_link.set_attribute("href", &url)?;
+    download_link.set_attribute("download", tmp_filename)?;
+    download_link.click();
+    Url::revoke_object_url(&url)?;
+    Ok(())
+}
+
+fn export_csv(charts: &Charts) -> BlcResult<()> {
+    let tmp_filename = "charts.csv";
+    let date_tmp_str = vec_to_string(charts.tmp().dates());
+    let val_tmp_str = vec_to_string(charts.tmp().values());
+    let mut s = format!("{date_tmp_str}\n{val_tmp_str}\n");
+    for c in &charts.persisted {
+        let date_str = vec_to_string(c.dates());
+        let val_str = vec_to_string(c.values());
+        let c_str = format!("{date_str}\n{val_str}\n");
+        s = format!("{s}{c_str}")
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    download_str(&s, tmp_filename).map_err(to_blc)?;
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let mut tmp_file = File::create(tmp_filename).map_err(to_blc).unwrap();
+        write!(tmp_file, "{s}").map_err(to_blc)?;
+    }
+    Ok(())
+}
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(js_namespace = console)]
+    fn log(s: &str);
+}
 
 #[derive(Debug)]
 enum Download<'a> {
@@ -132,9 +199,6 @@ impl PaymentData {
         Ok(())
     }
 }
-
-// const BASE_URL_WWW: &str = "http://localhost:8000/data";
-const BASE_URL_WWW: &str = "https://www.bertiqwerty.com/data";
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 pub struct BalanceApp<'a> {
@@ -559,6 +623,11 @@ impl<'a> eframe::App for BalanceApp<'a> {
                                 None
                             }
                         };
+                    }
+                    if ui.button("download as csv").clicked() {
+                        #[cfg(target_arch = "wasm32")]
+                        log("download csv");
+                        export_csv(&self.charts).unwrap();
                     }
                 });
                 if let Some(best_trigger) = &self.best_rebalance_trigger {

@@ -9,3 +9,17 @@ Simulate portfolio balance or backtest with or without rebalancing under https:/
 ## Build WASM
 
 See https://github.com/emilk/eframe_template.
+
+## Run locally
+
+### Native
+
+```
+cargo run --release
+```
+
+### WASM
+
+```
+trunk serve --public-url /
+```

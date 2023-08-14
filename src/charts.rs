@@ -13,7 +13,7 @@ use egui::{
     plot::{Corner, Legend, Line, PlotPoints},
     Ui,
 };
-use std::{iter, mem, ops::RangeInclusive};
+use std::{iter, mem, ops::RangeInclusive, str::FromStr};
 
 /// Intersects all timelines of all persisted charts
 fn start_end_date<'a>(charts: impl Iterator<Item = &'a Chart> + Clone) -> BlcResult<(Date, Date)> {
@@ -198,6 +198,9 @@ impl Chart {
         &self.name
     }
 
+    pub fn dates(&self) -> &Vec<Date> {
+        &self.dates
+    }
     pub fn values(&self) -> &Vec<f64> {
         &self.values
     }
@@ -335,6 +338,10 @@ impl Charts {
 
     pub fn move_tmp(&mut self) -> Chart {
         mem::take(&mut self.tmp)
+    }
+
+    pub fn tmp(&self) -> &Chart {
+        &self.tmp
     }
 
     fn adapt_name(&self, name: String) -> String {

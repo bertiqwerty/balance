@@ -1,6 +1,7 @@
-use std::fmt::Display;
 use std::iter;
+use std::{fmt::Display, str::FromStr};
 
+use crate::core_types::BlcError;
 use crate::{
     blcerr,
     core_types::{to_blc, BlcResult},
@@ -60,16 +61,6 @@ impl Date {
         }
     }
 
-    pub fn from_str(d: &str) -> BlcResult<Self> {
-        if d.len() == 7 {
-            let year = d[..4].parse::<usize>().map_err(to_blc)?;
-            let month = d[5..].parse::<usize>().map_err(to_blc)?;
-            Self::new(year, month)
-        } else {
-            Err(blcerr!("date needs 7 digits, YYYY/MM, got {d}"))
-        }
-    }
-
     pub fn year(&self) -> usize {
         self.date / 100
     }
@@ -92,6 +83,18 @@ impl Display for Date {
         let month = self.month();
         let s = format!("{year:04}/{month:02}");
         f.write_str(&s)
+    }
+}
+impl FromStr for Date {
+    type Err = BlcError;
+    fn from_str(d: &str) -> Result<Self, Self::Err> {
+        if d.len() == 7 {
+            let year = d[..4].parse::<usize>().map_err(to_blc)?;
+            let month = d[5..].parse::<usize>().map_err(to_blc)?;
+            Self::new(year, month)
+        } else {
+            Err(blcerr!("date needs 7 digits, YYYY/MM, got {d}"))
+        }
     }
 }
 
