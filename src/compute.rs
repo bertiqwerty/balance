@@ -185,7 +185,6 @@ pub fn unix_to_now_nanos() -> BlcResult<u64> {
         % (u64::MAX as u128)) as u64)
 }
 
-
 pub fn random_walk(
     expected_yearly_return: f64,
     is_markovian: bool,
