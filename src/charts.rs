@@ -589,11 +589,11 @@ fn test_add_fraction() {
         }
     }
     let fracs = vec![];
-    assert_v(&add_fraction(fracs), &vec![1.0]);
+    assert_v(&add_fraction(fracs), &[1.0]);
     let fracs = vec![1.0];
-    assert_v(&add_fraction(fracs), &vec![0.5, 0.5]);
+    assert_v(&add_fraction(fracs), &[0.5, 0.5]);
     let fracs = vec![0.5, 0.5];
-    assert_v(&add_fraction(fracs), &vec![1.0 / 3.0; 3]);
+    assert_v(&add_fraction(fracs), &[1.0 / 3.0; 3]);
 }
 
 #[test]
