@@ -185,34 +185,34 @@ pub fn unix_to_now_nanos() -> BlcResult<u64> {
         % (u64::MAX as u128)) as u64)
 }
 
-const SIGMA_WINDOW_SIZE: usize = 12;
 
 pub fn random_walk(
     expected_yearly_return: f64,
-    is_return_indpendent: bool,
+    is_markovian: bool,
     sigma_mean: f64,
+    sigma_window_size: usize,
     n_months: usize,
 ) -> BlcResult<Vec<f64>> {
     let mut sigma_rng = StdRng::seed_from_u64(unix_to_now_nanos()?);
     let sigma_distribution = Normal::new(sigma_mean, sigma_mean).map_err(to_blc)?;
-    let mut last_sigmas = [sigma_mean; SIGMA_WINDOW_SIZE];
-    let mut rv_rng = StdRng::seed_from_u64(unix_to_now_nanos()?);
+    let mut last_sigmas = vec![sigma_mean; sigma_window_size];
+    let mut monthly_factor_rng = StdRng::seed_from_u64(unix_to_now_nanos()?);
     let start_price = 1.0;
     let mut res = vec![start_price; n_months + 1];
     let expected_monthly_return = (1.0 + (expected_yearly_return / 100.0)).powf(1.0 / 12.0);
     let mut mu = expected_monthly_return;
     for (i, sigma) in (1..(n_months + 1)).zip(sigma_distribution.sample_iter(&mut sigma_rng)) {
-        for i in 0..9 {
+        for i in 0..(sigma_window_size - 1) {
             last_sigmas[i] = last_sigmas[i + 1];
         }
-        last_sigmas[9] = sigma;
+        last_sigmas[sigma_window_size - 1] = sigma;
         last_sigmas.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        let sigma = last_sigmas[SIGMA_WINDOW_SIZE / 2].abs();
+        let sigma = last_sigmas[sigma_window_size / 2].abs();
         let d = Normal::new(mu, sigma).map_err(to_blc)?;
-        let rv = d.sample(&mut rv_rng);
-        res[i] = (res[i - 1] * rv).max(1e-1);
+        let monthly_factor = d.sample(&mut monthly_factor_rng);
+        res[i] = (res[i - 1] * monthly_factor).max(1e-1);
 
-        if !is_return_indpendent && sigma - sigma_mean > 0.0 {
+        if !is_markovian && sigma - sigma_mean > 0.0 {
             let actual_total_return: f64 = (1..=i)
                 .map(|j| res[j] / res[j - 1])
                 .product::<f64>()
@@ -441,6 +441,7 @@ fn compute_total_balance(
         (initial_balances.iter().sum(), initial_balances.iter().sum())
     }
 }
+
 #[test]
 fn test_adapt() {
     let price_dev = vec![3.0, 6.0, 12.0, 6.0];
@@ -558,13 +559,13 @@ fn test_compute_balance() {
 
 #[test]
 fn test_compound() {
-    let compound_interest: Vec<f64> = random_walk(5.0, true, 0.0, 240).unwrap();
+    let compound_interest: Vec<f64> = random_walk(5.0, true, 0.0, 12, 240).unwrap();
     let (b, p) =
         compute_total_balance(&[&compound_interest], &[10000.0], None, NONE_REBALANCE_DATA);
     assert!((b - 26532.98).abs() < 1e-2);
     assert!((p - 10000.0).abs() < 1e-12);
 
-    let compound_interest: Vec<f64> = random_walk(5.0, true, 0.0, 360).unwrap();
+    let compound_interest: Vec<f64> = random_walk(5.0, true, 0.0, 12, 360).unwrap();
     let ci_len = compound_interest.len();
     let monthly_payments: Vec<f64> = vec![1000.0; ci_len - 1];
     let (b, _) = compute_total_balance(

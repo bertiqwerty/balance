@@ -330,14 +330,6 @@ impl<'a> eframe::App for BalanceApp<'a> {
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::ScrollArea::new([true, true]).show(ui, |ui| {
                 heading(ui, "Balance");
-                if let Some(status_msg) = &self.status_msg {
-                    ui.label(status_msg);
-                } else if self.charts.persisted.is_empty() {
-                    ui.label("add simulated or historical charts to compute balances");
-                } else {
-                    ui.label("balance computation ready");
-                }
-                ui.separator();
                 heading2(ui, "1. Add Charts");
                 egui::CollapsingHeader::new("Simulate").show(ui, |ui| {
                     egui::Grid::new("simulate-inputs")
@@ -377,6 +369,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                                         expected_yearly_return,
                                         is_eyr_independent,
                                         noise,
+                                        12,
                                         n_months,
                                     ) {
                                         Ok(values) => {
@@ -547,7 +540,6 @@ impl<'a> eframe::App for BalanceApp<'a> {
                 }
                 ui.separator();
                 heading2(ui, "3. Investigate Results");
-                ui.label(" ");
 
                 ui.horizontal(|ui| {
                     if ui
@@ -613,6 +605,15 @@ impl<'a> eframe::App for BalanceApp<'a> {
                         export_csv(&self.charts).unwrap();
                     }
                 });
+                ui.separator();
+                if let Some(status_msg) = &self.status_msg {
+                    ui.label(status_msg);
+                } else if self.charts.persisted.is_empty() {
+                    ui.label("add simulated or historical charts to compute balances");
+                } else {
+                    ui.label("balance computation ready");
+                }
+                ui.separator();
                 if let Some(best_trigger) = &self.best_rebalance_trigger {
                     egui::Grid::new("best-balance").show(ui, |ui| {
                         ui.label("(best) balance");
