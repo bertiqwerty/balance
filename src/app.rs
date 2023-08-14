@@ -23,8 +23,8 @@ use {
     web_sys::{Blob, HtmlElement, Url},
 };
 
-const BASE_URL_WWW: &str = "http://localhost:8000/data";
-// const BASE_URL_WWW: &str = "https://www.bertiqwerty.com/data";
+// const BASE_URL_WWW: &str = "http://localhost:8000/data";
+const BASE_URL_WWW: &str = "https://www.bertiqwerty.com/data";
 
 fn vec_to_string<T>(dates: &[T]) -> String
 where
