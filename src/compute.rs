@@ -208,7 +208,7 @@ pub fn random_walk(
         let sigma = last_sigmas[sigma_window_size / 2].abs();
         let d = Normal::new(mu, sigma).map_err(to_blc)?;
         let monthly_factor = d.sample(&mut monthly_factor_rng);
-        res[i] = (res[i - 1] * monthly_factor).max(1e-1);
+        res[i] = (res[i - 1] * monthly_factor).max(1e-2);
 
         if !is_markovian && sigma - sigma_mean > 0.0 {
             let actual_total_return: f64 = (1..=i)

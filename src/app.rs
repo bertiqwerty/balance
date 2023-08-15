@@ -375,14 +375,14 @@ impl<'a> eframe::App for BalanceApp<'a> {
                         egui::Grid::new("simulate-advanced")
                             .num_columns(2)
                             .show(ui, |ui| {
-                                ui.label("Return independent of previous returns?");
+                                ui.label("Return independent of previous returns");
                                 ui.checkbox(&mut self.sim.is_eyr_independent, "");
                                 ui.end_row();
-                                ui.label("volatility smoothing");
+                                ui.label("Volatility smoothing");
                                 ui.checkbox(&mut self.sim.vola.smoothing, "");
                             });
                         ui.horizontal(|ui| {
-                            ui.label("vola");
+                            ui.label("Vola");
                             ui.radio_value(
                                 &mut self.sim.vola.amount,
                                 VolaAmount::No,
@@ -406,7 +406,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                         });
                     });
                     ui.horizontal(|ui| {
-                        if ui.button("simulate").clicked() {
+                        if ui.button("Simulate").clicked() {
                             self.rebalance_stats = None;
                             match self.sim.parse() {
                                 Ok(data) => {
@@ -475,7 +475,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                     });
                 });
 
-                if ui.button("add current chart to balance").clicked() {
+                if ui.button("Add current chart to balance").clicked() {
                     self.best_rebalance_trigger = None;
                     self.charts.persist_tmp();
                     self.recompute_balance();
@@ -485,7 +485,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                 egui::Grid::new("inputs-balance-payments-interval")
                     .num_columns(2)
                     .show(ui, |ui| {
-                        ui.label("initial balance");
+                        ui.label("Initial balance");
                         if ui
                             .text_edit_singleline(&mut self.payment.initial_balance.0)
                             .changed()
@@ -495,7 +495,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                             self.recompute_rebalance_stats(false);
                         }
                         ui.end_row();
-                        ui.label("monthly payment");
+                        ui.label("Monthly payment");
                         if ui
                             .text_edit_singleline(&mut self.payment.monthly_payment.0)
                             .changed()
@@ -505,9 +505,9 @@ impl<'a> eframe::App for BalanceApp<'a> {
                             self.recompute_rebalance_stats(false);
                         }
                     });
-                egui::CollapsingHeader::new("rebalancing strategy").show(ui, |ui| {
+                egui::CollapsingHeader::new("Rebalancing strategy").show(ui, |ui| {
                     egui::Grid::new("rebalancing-strategy-inputs").show(ui, |ui| {
-                        ui.label("rebalance interval [#months]");
+                        ui.label("Rebalance interval [#months]");
                         if ui
                             .text_edit_singleline(&mut self.payment.rebalance_interval.0)
                             .changed()
@@ -516,7 +516,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                             self.recompute_rebalance_stats(false);
                         }
                         ui.end_row();
-                        ui.label("rebalance deviation threshold [%]");
+                        ui.label("Rebalance deviation threshold [%]");
                         if ui
                             .text_edit_singleline(&mut self.payment.rebalance_deviation.0)
                             .changed()
@@ -527,7 +527,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                         ui.end_row();
                     });
                 });
-                egui::CollapsingHeader::new("restrict timeline").show(ui, |ui| {
+                egui::CollapsingHeader::new("Restrict timeline").show(ui, |ui| {
                     egui::Grid::new("restriction-of-timeline").show(ui, |ui| {
                         if self.charts.start_slider(ui) {
                             self.best_rebalance_trigger = None;
@@ -557,16 +557,16 @@ impl<'a> eframe::App for BalanceApp<'a> {
 
                 egui::Grid::new("balance-number-results").show(ui, |ui| {
                     let nobalance = |ui: &mut Ui| {
-                        ui.label("final balance");
+                        ui.label("Final balance");
                         ui.label("-");
-                        ui.label("yearly return [%]");
+                        ui.label("Yearly return [%]");
                         ui.label("-");
-                        ui.label("factor");
+                        ui.label("Factor");
                         ui.label("-");
                     };
                     if let Some(tbom) = self.charts.total_balance_over_month() {
                         if let Some(balance) = tbom.values().iter().last() {
-                            ui.label("final balance");
+                            ui.label("Final balance");
                             ui.label(RichText::new(format!("{balance:0.2}")).strong());
                             let initial_payment = self.payment.initial_balance.1;
                             let monthly_payment = self.payment.monthly_payment.1;
@@ -578,11 +578,11 @@ impl<'a> eframe::App for BalanceApp<'a> {
                                         n_months,
                                         *balance,
                                     );
-                                    ui.label("yearly reaturn [%]");
+                                    ui.label("Yearly reaturn [%]");
                                     ui.label(
                                         RichText::new(format!("{yearly_return_perc:0.2}")).strong(),
                                     );
-                                    ui.label("factor");
+                                    ui.label("Factor");
                                     ui.label(RichText::new(format!("{total_yield:0.2}")).strong());
                                 }
                                 Err(e) => {
@@ -602,7 +602,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                             self.charts.plot_balance
                                 && self.rebalance_stats.is_none()
                                 && self.best_rebalance_trigger.is_none(),
-                            "balance plot",
+                            "Balance plot",
                         )
                         .clicked()
                     {
@@ -614,7 +614,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                             !self.charts.plot_balance
                                 && self.rebalance_stats.is_none()
                                 && self.best_rebalance_trigger.is_none(),
-                            "charts plot",
+                            "Charts plot",
                         )
                         .clicked()
                     {
@@ -624,7 +624,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                     } else if ui
                         .selectable_label(
                             self.rebalance_stats.is_some() && self.best_rebalance_trigger.is_none(),
-                            "rebalance statistics",
+                            "Rebalance statistics",
                         )
                         .clicked()
                     {
@@ -632,7 +632,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                     } else if ui
                         .selectable_label(
                             self.best_rebalance_trigger.is_some(),
-                            "best rebalance strategy",
+                            "Best rebalance strategy",
                         )
                         .clicked()
                     {
@@ -654,7 +654,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                             }
                         };
                     }
-                    if ui.button("download as csv").clicked() {
+                    if ui.button("Download as csv").clicked() {
                         #[cfg(target_arch = "wasm32")]
                         log("download csv");
                         export_csv(&self.charts).unwrap();
@@ -664,9 +664,9 @@ impl<'a> eframe::App for BalanceApp<'a> {
                 if let Some(status_msg) = &self.status_msg {
                     ui.label(status_msg);
                 } else if self.charts.persisted.is_empty() {
-                    ui.label("add simulated or historical charts to compute balances");
+                    ui.label("Add simulated or historical charts to compute balances");
                 } else {
-                    ui.label("balance computation ready");
+                    ui.label("Balance computation ready");
                 }
                 ui.separator();
                 if let Some(best_trigger) = &self.best_rebalance_trigger {
