@@ -44,11 +44,8 @@ fn download_str(s: &str, tmp_filename: &str) -> Result<(), JsValue> {
 
 fn export_csv(charts: &Charts) -> BlcResult<()> {
     let tmp_filename = "charts.csv";
-    let mut s = charts.tmp().to_string();
-    for c in &charts.persisted {
-        let c_str = c.to_string();
-        s = format!("{s}{c_str}")
-    }
+
+    let s = charts.to_string();
 
     #[cfg(target_arch = "wasm32")]
     download_str(&s, tmp_filename).map_err(to_blc)?;

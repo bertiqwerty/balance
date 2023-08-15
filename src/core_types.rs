@@ -1,4 +1,7 @@
-use std::fmt::Debug;
+use std::{
+    error::Error,
+    fmt::{Debug, Display},
+};
 
 #[derive(Debug, Clone)]
 pub struct BlcError {
@@ -11,6 +14,12 @@ impl BlcError {
         }
     }
 }
+impl Display for BlcError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.msg)
+    }
+}
+impl Error for BlcError {}
 #[macro_export]
 macro_rules! blcerr {
     ($s:literal $(, $exps:expr )*) => {

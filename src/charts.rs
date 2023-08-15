@@ -10,12 +10,13 @@ use crate::{
     month_slider::{MonthSlider, SliderState},
 };
 use egui::{
-    plot::{Corner, Legend, Line, PlotPoints},
+    plot::{Corner, Legend, Line},
     Ui,
 };
+use std::iter::Iterator;
 use std::{fmt::Display, iter, mem, ops::RangeInclusive, str::FromStr};
 
-/// Intersects all timelines of all persisted charts
+/// Intersects all timelines of all given charts
 fn start_end_date<'a>(charts: impl Iterator<Item = &'a Chart> + Clone) -> BlcResult<(Date, Date)> {
     let max_date = &Date::from_str("9999/12").unwrap();
     let min_date = &Date::from_str("0001/01").unwrap();
@@ -187,31 +188,6 @@ fn slice_by_date<'a, T>(
     Ok(&to_be_sliced[start_idx..end_idx])
 }
 
-enum SeriesType {
-    Dates,
-    Values,
-}
-impl SeriesType {
-    fn name(&self, name: &str) -> String {
-        match self {
-            SeriesType::Dates => format!("dates_{name}"),
-            SeriesType::Values => format!("vals_{name}"),
-        }
-    }
-}
-
-fn vec_to_string<T>(series_type: SeriesType, name: &str, dates: &[T]) -> Option<String>
-where
-    T: Display,
-{
-    let name = series_type.name(name);
-    dates
-        .iter()
-        .map(|d| format!("{d}"))
-        .reduce(|s1, s2| format!("{s1},{s2}"))
-        .map(|s| format!("{name},{s}"))
-}
-
 #[derive(Default, Debug, Clone)]
 pub struct Chart {
     name: String,
@@ -239,21 +215,29 @@ impl Chart {
         Self::new(name, dates, values)
     }
 
-    fn to_line(&self, start_date: Date, end_date: Date, start_with_1: bool) -> BlcResult<Line> {
+    pub fn values_between_dates(
+        &self,
+        start_date: Date,
+        end_date: Date,
+        start_with_1: bool,
+    ) -> BlcResult<Vec<[f64; 2]>> {
         let sliced_values = self.sliced_values(start_date, end_date)?;
-        let line = if start_with_1 {
+        Ok(if start_with_1 {
             adapt_pricedev_to_initial_balance(1.0, sliced_values)
                 .enumerate()
                 .map(|(i, v)| [i as f64, v])
-                .collect::<PlotPoints>()
+                .collect::<Vec<_>>()
         } else {
             sliced_values
                 .iter()
                 .enumerate()
                 .map(|(i, v)| [i as f64, *v])
-                .collect::<PlotPoints>()
-        };
-        Ok(Line::new(line).name(self.name.clone()))
+                .collect::<Vec<_>>()
+        })
+    }
+    pub fn to_line(&self, start_date: Date, end_date: Date, start_with_1: bool) -> BlcResult<Line> {
+        let vals = self.values_between_dates(start_date, end_date, start_with_1)?;
+        Ok(Line::new(vals).name(self.name.clone()))
     }
 
     fn sliced_values(&self, start_date: Date, end_date: Date) -> BlcResult<&[f64]> {
@@ -262,19 +246,6 @@ impl Chart {
 
     fn sliced_dates(&self, start_date: Date, end_date: Date) -> BlcResult<&[Date]> {
         slice_by_date(&self.dates, start_date, end_date, &self.dates)
-    }
-}
-
-impl Display for Chart {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let dates_str = vec_to_string(SeriesType::Dates, &self.name, &self.dates);
-        let vals_str = vec_to_string(SeriesType::Values, &self.name, &self.values);
-        if let (Some(dates_str), Some(vals_str)) = (dates_str, vals_str) {
-            let s = format!("{dates_str}\n{vals_str}\n");
-            f.write_str(&s)
-        } else {
-            f.write_str("")
-        }
     }
 }
 
@@ -356,6 +327,7 @@ impl Charts {
         }
     }
 
+    /// Intersection of all dates of charts
     pub fn dates(&self, with_tmp: bool) -> BlcResult<Vec<Date>> {
         let (start, end) = self.start_end_date(with_tmp)?;
         Ok(fill_between(start, end))
@@ -570,14 +542,65 @@ impl Charts {
             .x_axis_formatter(x_fmt_tbom)
             .show(ui, |plot_ui| {
                 for c in charts_to_plot {
-                    if let (Some(start), Some(end)) = (start_date, end_date) {
-                        if let Ok(line) = c.to_line(start, end, with_tmp) {
-                            plot_ui.line(line);
+                    if !c.values().is_empty() {
+                        if let (Some(start), Some(end)) = (start_date, end_date) {
+                            if let Ok(line) = c.to_line(start, end, with_tmp) {
+                                plot_ui.line(line);
+                            }
                         }
                     }
                 }
             });
         Ok(())
+    }
+}
+fn charts_to_string(charts: &Charts) -> BlcResult<String> {
+    const WITH_TMP: bool = true;
+    let dates = charts.dates(WITH_TMP)?;
+    let start_date = dates.first().copied();
+    let end_date = dates.last().copied();
+    let dates_str = dates
+        .iter()
+        .fold("".to_string(), |d1, d2| format!("{d1},{d2}"));
+    let values_str = if let (Some(start), Some(end)) = (start_date, end_date) {
+        let mut csv_str = match charts.tmp().values_between_dates(start, end, WITH_TMP) {
+            Ok(tmp_values) => {
+                let tmp_name = charts.tmp().name();
+                tmp_values
+                    .iter()
+                    .map(|[_, v]| v)
+                    .fold(tmp_name.to_string(), |v1, v2| format!("{v1},{v2}"))
+            }
+            Err(_) => "".to_string(),
+        };
+
+        for c in &charts.persisted {
+            let cur_csv_str = c
+                .values_between_dates(start, end, WITH_TMP)
+                .unwrap()
+                .iter()
+                .map(|[_, v]| v)
+                .fold(c.name().to_string(), |v1, v2| format!("{v1},{v2}"));
+
+            csv_str = if !csv_str.is_empty() {
+                format!("{csv_str}\n{cur_csv_str}")
+            } else {
+                cur_csv_str
+            };
+        }
+        csv_str
+    } else {
+        "".to_string()
+    };
+    Ok(format!("{dates_str}\n{values_str}"))
+}
+
+impl Display for Charts {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match charts_to_string(self) {
+            Ok(s) => f.write_str(&s),
+            Err(e) => f.write_str(&e.msg),
+        }
     }
 }
 
