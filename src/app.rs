@@ -72,29 +72,52 @@ enum Download<'a> {
 }
 
 #[derive(PartialEq, Clone)]
-enum Vola {
-    No,
-    Lo,
-    Mi,
-    Hi,
+struct Vola {
+    amount: VolaAmount,
+    smoothing: bool,
+    smoothing_window: usize,
 }
 impl Vola {
-    fn to_float(&self) -> f64 {
-        match self {
-            Vola::No => 0.0,
-            Vola::Lo => 0.005,
-            Vola::Mi => 0.01,
-            Vola::Hi => 0.02,
+    fn amount_as_float(&self) -> f64 {
+        self.amount.to_float()
+    }
+    fn new() -> Self {
+        Vola {
+            amount: VolaAmount::Mi,
+            smoothing: true,
+            smoothing_window: 12,
         }
     }
 }
 impl Display for Vola {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&format!("{}_{}", self.amount, self.smoothing))
+    }
+}
+#[derive(PartialEq, Clone)]
+enum VolaAmount {
+    No,
+    Lo,
+    Mi,
+    Hi,
+}
+impl VolaAmount {
+    fn to_float(&self) -> f64 {
         match self {
-            Vola::No => f.write_str("no"),
-            Vola::Lo => f.write_str("low"),
-            Vola::Mi => f.write_str("mid"),
-            Vola::Hi => f.write_str("high"),
+            VolaAmount::No => 0.0,
+            VolaAmount::Lo => 0.005,
+            VolaAmount::Mi => 0.01,
+            VolaAmount::Hi => 0.02,
+        }
+    }
+}
+impl Display for VolaAmount {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            VolaAmount::No => f.write_str("no"),
+            VolaAmount::Lo => f.write_str("low"),
+            VolaAmount::Mi => f.write_str("mid"),
+            VolaAmount::Hi => f.write_str("high"),
         }
     }
 }
@@ -128,7 +151,7 @@ struct SimInput {
 impl SimInput {
     fn new() -> Self {
         SimInput {
-            vola: Vola::Mi,
+            vola: Vola::new(),
             expected_yearly_return: "7.0".to_string(),
             is_eyr_independent: true,
             n_months: "360".to_string(),
@@ -139,9 +162,14 @@ impl SimInput {
             ),
         }
     }
-    fn parse(&self) -> BlcResult<(f64, f64, bool, Date, usize)> {
+    fn parse(&self) -> BlcResult<(f64, usize, f64, bool, Date, usize)> {
         Ok((
-            self.vola.to_float(),
+            self.vola.amount_as_float(),
+            if self.vola.smoothing {
+                self.vola.smoothing_window
+            } else {
+                1
+            },
             self.expected_yearly_return.parse().map_err(to_blc)?,
             self.is_eyr_independent,
             self.start_month_slider
@@ -338,20 +366,44 @@ impl<'a> eframe::App for BalanceApp<'a> {
                             ui.label("expected yearly return [%]");
                             ui.text_edit_singleline(&mut self.sim.expected_yearly_return);
                             ui.end_row();
-                            ui.label("Return independent of previous returns?");
-                            ui.checkbox(&mut self.sim.is_eyr_independent, "");
-                            ui.end_row();
                             ui.label("#months");
                             ui.text_edit_singleline(&mut self.sim.n_months);
                             ui.end_row();
                             self.sim.start_month_slider.month_slider(ui, "start date");
                         });
-                    ui.horizontal(|ui| {
-                        ui.label("vola");
-                        ui.radio_value(&mut self.sim.vola, Vola::No, format!("{}", Vola::No));
-                        ui.radio_value(&mut self.sim.vola, Vola::Lo, format!("{}", Vola::Lo));
-                        ui.radio_value(&mut self.sim.vola, Vola::Mi, format!("{}", Vola::Mi));
-                        ui.radio_value(&mut self.sim.vola, Vola::Hi, format!("{}", Vola::Hi));
+                    egui::CollapsingHeader::new("Advanced").show(ui, |ui| {
+                        egui::Grid::new("simulate-advanced")
+                            .num_columns(2)
+                            .show(ui, |ui| {
+                                ui.label("Return independent of previous returns?");
+                                ui.checkbox(&mut self.sim.is_eyr_independent, "");
+                                ui.end_row();
+                                ui.label("volatility smoothing");
+                                ui.checkbox(&mut self.sim.vola.smoothing, "");
+                            });
+                        ui.horizontal(|ui| {
+                            ui.label("vola");
+                            ui.radio_value(
+                                &mut self.sim.vola.amount,
+                                VolaAmount::No,
+                                format!("{}", VolaAmount::No),
+                            );
+                            ui.radio_value(
+                                &mut self.sim.vola.amount,
+                                VolaAmount::Lo,
+                                format!("{}", VolaAmount::Lo),
+                            );
+                            ui.radio_value(
+                                &mut self.sim.vola.amount,
+                                VolaAmount::Mi,
+                                format!("{}", VolaAmount::Mi),
+                            );
+                            ui.radio_value(
+                                &mut self.sim.vola.amount,
+                                VolaAmount::Hi,
+                                format!("{}", VolaAmount::Hi),
+                            );
+                        });
                     });
                     ui.horizontal(|ui| {
                         if ui.button("simulate").clicked() {
@@ -360,6 +412,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                                 Ok(data) => {
                                     let (
                                         noise,
+                                        smoothing_window_size,
                                         expected_yearly_return,
                                         is_eyr_independent,
                                         start_date,
@@ -369,7 +422,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                                         expected_yearly_return,
                                         is_eyr_independent,
                                         noise,
-                                        12,
+                                        smoothing_window_size,
                                         n_months,
                                     ) {
                                         Ok(values) => {
@@ -451,7 +504,9 @@ impl<'a> eframe::App for BalanceApp<'a> {
                             self.recompute_balance();
                             self.recompute_rebalance_stats(false);
                         }
-                        ui.end_row();
+                    });
+                egui::CollapsingHeader::new("rebalancing strategy").show(ui, |ui| {
+                    egui::Grid::new("rebalancing-strategy-inputs").show(ui, |ui| {
                         ui.label("rebalance interval [#months]");
                         if ui
                             .text_edit_singleline(&mut self.payment.rebalance_interval.0)
@@ -470,49 +525,8 @@ impl<'a> eframe::App for BalanceApp<'a> {
                             self.recompute_rebalance_stats(false);
                         }
                         ui.end_row();
-                        let nobalance = |ui: &mut Ui| {
-                            ui.label("final balance");
-                            ui.label("-");
-                            ui.end_row();
-                            ui.label("yearly return [%]");
-                            ui.label("-");
-                            ui.end_row();
-                            ui.label("factor");
-                            ui.label("-");
-                        };
-                        if let Some(tbom) = self.charts.total_balance_over_month() {
-                            if let Some(balance) = tbom.values().iter().last() {
-                                ui.label("final balance");
-                                ui.label(format!("{balance:0.2}"));
-                                ui.end_row();
-                                let initial_payment = self.payment.initial_balance.1;
-                                let monthly_payment = self.payment.monthly_payment.1;
-                                match self.charts.n_months_persisted() {
-                                    Ok(n_months) => {
-                                        let (yearly_return_perc, total_yield) = yearly_return(
-                                            initial_payment,
-                                            monthly_payment,
-                                            n_months,
-                                            *balance,
-                                        );
-                                        ui.label("yearly reaturn [%]");
-                                        ui.label(format!("{yearly_return_perc:0.2}"));
-                                        ui.end_row();
-                                        ui.label("factor");
-                                        ui.label(format!("{total_yield:0.2}"));
-                                    }
-                                    Err(e) => {
-                                        self.status_msg = Some(format!("{e:?}"));
-                                    }
-                                }
-                            } else {
-                                nobalance(ui);
-                            }
-                        } else {
-                            nobalance(ui);
-                        }
-                        ui.end_row();
                     });
+                });
                 egui::CollapsingHeader::new("restrict timeline").show(ui, |ui| {
                     egui::Grid::new("restriction-of-timeline").show(ui, |ui| {
                         if self.charts.start_slider(ui) {
@@ -541,6 +555,47 @@ impl<'a> eframe::App for BalanceApp<'a> {
                 ui.separator();
                 heading2(ui, "3. Investigate Results");
 
+                egui::Grid::new("balance-number-results").show(ui, |ui| {
+                    let nobalance = |ui: &mut Ui| {
+                        ui.label("final balance");
+                        ui.label("-");
+                        ui.label("yearly return [%]");
+                        ui.label("-");
+                        ui.label("factor");
+                        ui.label("-");
+                    };
+                    if let Some(tbom) = self.charts.total_balance_over_month() {
+                        if let Some(balance) = tbom.values().iter().last() {
+                            ui.label("final balance");
+                            ui.label(RichText::new(format!("{balance:0.2}")).strong());
+                            let initial_payment = self.payment.initial_balance.1;
+                            let monthly_payment = self.payment.monthly_payment.1;
+                            match self.charts.n_months_persisted() {
+                                Ok(n_months) => {
+                                    let (yearly_return_perc, total_yield) = yearly_return(
+                                        initial_payment,
+                                        monthly_payment,
+                                        n_months,
+                                        *balance,
+                                    );
+                                    ui.label("yearly reaturn [%]");
+                                    ui.label(
+                                        RichText::new(format!("{yearly_return_perc:0.2}")).strong(),
+                                    );
+                                    ui.label("factor");
+                                    ui.label(RichText::new(format!("{total_yield:0.2}")).strong());
+                                }
+                                Err(e) => {
+                                    self.status_msg = Some(format!("{e:?}"));
+                                }
+                            }
+                        } else {
+                            nobalance(ui);
+                        }
+                    } else {
+                        nobalance(ui);
+                    }
+                });
                 ui.horizontal(|ui| {
                     if ui
                         .selectable_label(
