@@ -170,7 +170,6 @@ pub fn adapt_pricedev_to_initial_balance<'a>(
 
 #[cfg(target_arch = "wasm32")]
 pub fn unix_to_now_nanos() -> BlcResult<u64> {
-    use wasm_bindgen::prelude::*;
     let now = (js_sys::Date::now() * 1000.0) as u128;
     Ok((now % (u64::MAX as u128)) as u64)
 }

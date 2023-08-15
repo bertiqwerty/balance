@@ -10,15 +10,17 @@ use crate::io::read_csv_from_str;
 use crate::month_slider::{MonthSlider, SliderState};
 use egui::{Context, Response, RichText, Ui};
 use std::fmt::Display;
-use std::fs::File;
-use std::io::Write;
 use std::iter;
 use std::sync::mpsc;
 use std::sync::mpsc::Sender;
-use wasm_bindgen::prelude::*;
+// use wasm_bindgen::prelude::*;
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::{fs::File, io::Write};
 
 #[cfg(target_arch = "wasm32")]
 use {
+    wasm_bindgen::prelude::*,
     wasm_bindgen::JsValue,
     web_sys::{Blob, HtmlElement, Url},
 };
@@ -58,6 +60,7 @@ fn export_csv(charts: &Charts) -> BlcResult<()> {
     Ok(())
 }
 
+#[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(js_namespace = console)]
