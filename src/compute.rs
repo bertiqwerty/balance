@@ -195,7 +195,7 @@ pub fn random_walk(
     let sigma_distribution = Normal::new(sigma_mean, sigma_mean).map_err(to_blc)?;
     let mut last_sigmas = vec![sigma_mean; sigma_window_size];
     let mut monthly_factor_rng = StdRng::seed_from_u64(unix_to_now_nanos()?);
-    let start_price = 1.0;
+    let start_price = 1e5;
     let mut res = vec![start_price; n_months + 1];
     let expected_monthly_return = (1.0 + (expected_yearly_return / 100.0)).powf(1.0 / 12.0);
     let mut mu = expected_monthly_return;
@@ -208,7 +208,7 @@ pub fn random_walk(
         let sigma = last_sigmas[sigma_window_size / 2].abs();
         let d = Normal::new(mu, sigma).map_err(to_blc)?;
         let monthly_factor = d.sample(&mut monthly_factor_rng);
-        res[i] = (res[i - 1] * monthly_factor).max(1e-2);
+        res[i] = (res[i - 1] * monthly_factor).max(1e-4);
 
         if !is_markovian && sigma - sigma_mean > 0.0 {
             let actual_total_return: f64 = (1..=i)

@@ -219,11 +219,11 @@ impl Chart {
         &self,
         start_date: Date,
         end_date: Date,
-        start_with_1: bool,
+        initial_balance: Option<f64>,
     ) -> BlcResult<Vec<[f64; 2]>> {
         let sliced_values = self.sliced_values(start_date, end_date)?;
-        Ok(if start_with_1 {
-            adapt_pricedev_to_initial_balance(1.0, sliced_values)
+        Ok(if let Some(initial_balance) = initial_balance {
+            adapt_pricedev_to_initial_balance(initial_balance, sliced_values)
                 .enumerate()
                 .map(|(i, v)| [i as f64, v])
                 .collect::<Vec<_>>()
@@ -235,8 +235,14 @@ impl Chart {
                 .collect::<Vec<_>>()
         })
     }
-    pub fn to_line(&self, start_date: Date, end_date: Date, start_with_1: bool) -> BlcResult<Line> {
-        let vals = self.values_between_dates(start_date, end_date, start_with_1)?;
+    pub fn to_line(
+        &self,
+        start_date: Date,
+        end_date: Date,
+        initial_balance: Option<f64>,
+    ) -> BlcResult<Line> {
+        let vals = self.values_between_dates(start_date, end_date, initial_balance)?;
+        println!("{:?}\n", vals[0]);
         Ok(Line::new(vals).name(self.name.clone()))
     }
 
@@ -252,8 +258,13 @@ impl Chart {
 type ComputeData<'a> = (Vec<&'a [f64]>, Vec<f64>, Vec<Vec<f64>>);
 
 #[derive(Default, Clone, Debug)]
+pub struct TmpChart {
+    pub chart: Chart,
+    pub initial_balance: f64,
+}
+#[derive(Default, Clone, Debug)]
 pub struct Charts {
-    tmp: Chart,
+    tmp: Option<TmpChart>,
     pub persisted: Vec<Chart>,
     fractions: Vec<f64>,
     fractions_fixed: Vec<bool>,
@@ -265,8 +276,8 @@ pub struct Charts {
 }
 impl Charts {
     pub fn update_start_end_sliders(&mut self) {
-        if let Ok((start, end)) = start_end_date(self.persisted.iter().chain(iter::once(&self.tmp)))
-        {
+        let start_end = start_end_date(self.persisted_and_tmp_iter());
+        if let Ok((start, end)) = start_end {
             self.user_start = MonthSlider::new(start, end, SliderState::First);
             self.user_end = MonthSlider::new(start, end, SliderState::Last);
         }
@@ -305,8 +316,12 @@ impl Charts {
     }
 
     pub fn start_end_date(&self, with_tmp: bool) -> BlcResult<(Date, Date)> {
-        let (start, end) = if with_tmp {
-            start_end_date(self.persisted.iter().chain(iter::once(&self.tmp)))?
+        let (start, end) = if let Some(tmp) = &self.tmp {
+            if with_tmp {
+                start_end_date(self.persisted.iter().chain(iter::once(&tmp.chart)))?
+            } else {
+                start_end_date(self.persisted.iter())?
+            }
         } else {
             start_end_date(self.persisted.iter())?
         };
@@ -337,18 +352,18 @@ impl Charts {
         self.total_balance_over_month.as_ref()
     }
 
-    pub fn add_tmp(&mut self, mut chart: Chart) {
-        chart.name = self.adapt_name(mem::take(&mut chart.name));
-        self.tmp = chart;
-        self.update_start_end_sliders()
+    pub fn add_tmp(&mut self, chart: Option<TmpChart>) {
+        if let Some(mut tmp) = chart {
+            tmp.chart.name = self.adapt_name(mem::take(&mut tmp.chart.name));
+            self.tmp = Some(tmp);
+            self.update_start_end_sliders()
+        } else {
+            self.tmp = None;
+        }
     }
 
-    pub fn move_tmp(&mut self) -> Chart {
+    pub fn move_tmp(&mut self) -> Option<TmpChart> {
         mem::take(&mut self.tmp)
-    }
-
-    pub fn tmp(&self) -> &Chart {
-        &self.tmp
     }
 
     fn adapt_name(&self, name: String) -> String {
@@ -361,12 +376,18 @@ impl Charts {
     }
 
     pub fn persist_tmp(&mut self) {
-        if !self.tmp.dates.is_empty() {
-            let mut c = mem::take(&mut self.tmp);
-            let c = Chart::new(self.adapt_name(mem::take(&mut c.name)), c.dates, c.values);
-            self.persisted.push(c);
-            self.fractions = add_fraction(mem::take(&mut self.fractions));
-            self.fractions_fixed.push(false);
+        if let Some(tmp) = &self.tmp {
+            if !tmp.chart.dates.is_empty() {
+                let mut c = mem::take(&mut self.tmp).unwrap();
+                let c = Chart::new(
+                    self.adapt_name(mem::take(&mut c.chart.name)),
+                    c.chart.dates,
+                    c.chart.values,
+                );
+                self.persisted.push(c);
+                self.fractions = add_fraction(mem::take(&mut self.fractions));
+                self.fractions_fixed.push(false);
+            }
         }
     }
 
@@ -504,7 +525,14 @@ impl Charts {
         Ok(())
     }
 
-    pub fn plot(&self, ui: &mut Ui, with_tmp: bool) -> BlcResult<()> {
+    fn persisted_and_tmp_iter(&self) -> impl Iterator<Item = &Chart> + Clone {
+        self.persisted
+            .iter()
+            .map(Some)
+            .chain(iter::once(self.tmp.as_ref().map(|tmp| &tmp.chart)))
+            .flatten()
+    }
+    pub fn plot(&self, ui: &mut Ui) -> BlcResult<()> {
         let charts_to_plot = if self.plot_balance {
             if let (Some(balances), Some(payments)) = (
                 &self.total_balance_over_month,
@@ -515,12 +543,18 @@ impl Charts {
                 vec![]
             }
         } else {
-            self.persisted.iter().chain(iter::once(&self.tmp)).collect()
+            self.persisted_and_tmp_iter().collect()
         };
 
-        let dates = match self.dates(with_tmp) {
+        let dates = match self.dates(!self.plot_balance) {
             Ok(dates) => dates,
-            Err(_) => self.tmp.dates.clone(),
+            Err(e) => {
+                if let Some(tmp) = &self.tmp {
+                    tmp.chart.dates.clone()
+                } else {
+                    return Err(e);
+                }
+            }
         };
         let start_date = dates.first().copied();
         let end_date = dates.last().copied();
@@ -544,7 +578,15 @@ impl Charts {
                 for c in charts_to_plot {
                     if !c.values().is_empty() {
                         if let (Some(start), Some(end)) = (start_date, end_date) {
-                            if let Ok(line) = c.to_line(start, end, with_tmp) {
+                            if let Ok(line) = c.to_line(
+                                start,
+                                end,
+                                if self.plot_balance {
+                                    None
+                                } else {
+                                    self.tmp.as_ref().map(|tmp| tmp.initial_balance)
+                                },
+                            ) {
                                 plot_ui.line(line);
                             }
                         }
@@ -563,20 +605,32 @@ fn charts_to_string(charts: &Charts) -> BlcResult<String> {
         .iter()
         .fold("".to_string(), |d1, d2| format!("{d1},{d2}"));
     let values_str = if let (Some(start), Some(end)) = (start_date, end_date) {
-        let mut csv_str = match charts.tmp().values_between_dates(start, end, WITH_TMP) {
-            Ok(tmp_values) => {
-                let tmp_name = charts.tmp().name();
-                tmp_values
-                    .iter()
-                    .map(|[_, v]| v)
-                    .fold(tmp_name.to_string(), |v1, v2| format!("{v1},{v2}"))
+        let mut csv_str = if let Some(tmp) = &charts.tmp {
+            match tmp.chart.values_between_dates(
+                start,
+                end,
+                charts.tmp.as_ref().map(|tmp| tmp.initial_balance),
+            ) {
+                Ok(tmp_values) => {
+                    let tmp_name = tmp.chart.name();
+                    tmp_values
+                        .iter()
+                        .map(|[_, v]| v)
+                        .fold(tmp_name.to_string(), |v1, v2| format!("{v1},{v2}"))
+                }
+                Err(_) => "".to_string(),
             }
-            Err(_) => "".to_string(),
+        } else {
+            "".to_string()
         };
 
         for c in &charts.persisted {
             let cur_csv_str = c
-                .values_between_dates(start, end, WITH_TMP)
+                .values_between_dates(
+                    start,
+                    end,
+                    charts.tmp.as_ref().map(|tmp| tmp.initial_balance),
+                )
                 .unwrap()
                 .iter()
                 .map(|[_, v]| v)

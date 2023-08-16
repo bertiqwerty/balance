@@ -1,5 +1,5 @@
 use crate::blcerr;
-use crate::charts::{Chart, Charts};
+use crate::charts::{Chart, Charts, TmpChart};
 use crate::compute::{
     random_walk, yearly_return, BestRebalanceTrigger, RebalanceStats, RebalanceStatsSummary,
     RebalanceTrigger,
@@ -268,7 +268,10 @@ impl<'a> BalanceApp<'a> {
                 Ok(resp) => {
                     let (dates, values) = read_csv_from_str(resp.text().unwrap()).unwrap();
                     self.charts.plot_balance = false;
-                    Chart::from_tuple(name.to_string(), (dates, values))
+                    Some(TmpChart {
+                        chart: Chart::from_tuple(name.to_string(), (dates, values)),
+                        initial_balance: self.payment.initial_balance.1,
+                    })
                 }
                 Err(e) => {
                     let status = format!("{e:?}");
@@ -426,7 +429,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                                         n_months,
                                     ) {
                                         Ok(values) => {
-                                            let tmp = Chart::new(
+                                            let chart = Chart::new(
                                                 format!(
                                                     "{}_{}_{}",
                                                     self.sim.expected_yearly_return,
@@ -438,7 +441,10 @@ impl<'a> eframe::App for BalanceApp<'a> {
                                                     .collect::<Vec<_>>(),
                                                 values,
                                             );
-                                            self.charts.add_tmp(tmp);
+                                            self.charts.add_tmp(Some(TmpChart {
+                                                chart,
+                                                initial_balance: self.payment.initial_balance.1,
+                                            }));
                                             self.status_msg = None;
                                             self.charts.plot_balance = false;
                                         }
@@ -780,7 +786,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                             self.status_msg = Some(format!("{e:?}"));
                         }
                     }
-                } else if let Err(e) = self.charts.plot(ui, !self.charts.plot_balance) {
+                } else if let Err(e) = self.charts.plot(ui) {
                     self.status_msg = Some(format!("{e:?}"));
                 }
                 ui.separator();
