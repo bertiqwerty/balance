@@ -127,7 +127,7 @@ fn trigger_dl(url: &str, rx: Sender<ehttp::Result<ehttp::Response>>, ctx: Contex
     ehttp::fetch(req, move |response| {
         match rx.send(response) {
             Ok(_) => {}
-            Err(e) => println!("{e:#?}"),
+            Err(e) => println!("{e}"),
         };
         ctx.request_repaint();
     });
@@ -274,7 +274,7 @@ impl<'a> BalanceApp<'a> {
                     })
                 }
                 Err(e) => {
-                    let status = format!("{e:?}");
+                    let status = format!("{e}");
                     self.status_msg = Some(status);
                     self.charts.move_tmp()
                 }
@@ -286,7 +286,7 @@ impl<'a> BalanceApp<'a> {
 
     fn recompute_balance(&mut self) {
         if let Err(e) = self.payment.parse() {
-            self.status_msg = Some(format!("{e:?}"));
+            self.status_msg = Some(format!("{e}"));
         } else {
             let PaymentData {
                 initial_balance: (_, initial_balance),
@@ -302,7 +302,7 @@ impl<'a> BalanceApp<'a> {
                     deviation,
                 },
             ) {
-                self.status_msg = Some(format!("{e:?}"));
+                self.status_msg = Some(format!("{e}"));
             } else {
                 self.status_msg = None;
                 self.charts.plot_balance = true;
@@ -449,12 +449,12 @@ impl<'a> eframe::App for BalanceApp<'a> {
                                             self.charts.plot_balance = false;
                                         }
                                         Err(e) => {
-                                            self.status_msg = Some(format!("{e:?}"));
+                                            self.status_msg = Some(format!("{e}"));
                                         }
                                     };
                                 }
                                 Err(e) => {
-                                    self.status_msg = Some(format!("{e:?}"));
+                                    self.status_msg = Some(format!("{e}"));
                                 }
                             };
                         }
@@ -592,7 +592,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                                     ui.label(RichText::new(format!("{total_yield:0.2}")).strong());
                                 }
                                 Err(e) => {
-                                    self.status_msg = Some(format!("{e:?}"));
+                                    self.status_msg = Some(format!("{e}"));
                                 }
                             }
                         } else {
@@ -655,7 +655,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                             Ok(x) => Some(x),
                             Err(e) => {
                                 self.status_msg =
-                                    Some(format!("could not find best trigger; {e:?}"));
+                                    Some(format!("could not find best trigger; {e}"));
                                 None
                             }
                         };
@@ -783,11 +783,11 @@ impl<'a> eframe::App for BalanceApp<'a> {
                             ui.label("We ignore any costs that might be induced by re-balancing.");
                         }
                         Err(e) => {
-                            self.status_msg = Some(format!("{e:?}"));
+                            self.status_msg = Some(format!("{e}"));
                         }
                     }
                 } else if let Err(e) = self.charts.plot(ui) {
-                    self.status_msg = Some(format!("{e:?}"));
+                    self.status_msg = Some(format!("{e}"));
                 }
                 ui.separator();
                 ui.horizontal(|ui| {

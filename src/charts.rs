@@ -24,11 +24,11 @@ fn start_end_date<'a>(charts: impl Iterator<Item = &'a Chart> + Clone) -> BlcRes
         .clone()
         .map(|c| c.dates.first().unwrap_or(min_date))
         .max()
-        .ok_or_else(|| blcerr!("no charts added"))?;
+        .ok_or_else(|| blcerr!("Add simulated or historical charts to compute balances"))?;
     let end_date = *charts
         .map(|c| c.dates.iter().last().unwrap_or(max_date))
         .min()
-        .ok_or_else(|| blcerr!("no charts added"))?;
+        .ok_or_else(|| blcerr!("Add simulated or historical charts to compute balances"))?;
     if end_date <= start_date {
         Err(blcerr!("start date needs to be strictly before enddate"))
     } else {
