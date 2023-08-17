@@ -274,7 +274,7 @@ impl<'a> BalanceApp<'a> {
                     })
                 }
                 Err(e) => {
-                    let status = format!("{e}");
+                    let status = e.to_string();
                     self.status_msg = Some(status);
                     self.charts.move_tmp()
                 }
@@ -654,8 +654,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                         {
                             Ok(x) => Some(x),
                             Err(e) => {
-                                self.status_msg =
-                                    Some(format!("could not find best trigger; {e}"));
+                                self.status_msg = Some(format!("could not find best trigger; {e}"));
                                 None
                             }
                         };
