@@ -102,11 +102,12 @@ impl MonthlyPayments {
             .iter()
             .zip(self.intervals.iter())
             .map(|(pay, inter)| {
-                f(*pay) * if let Some(inter) = inter {
-                    inter.len() as f64
-                } else {
-                    n_months as f64
-                }
+                f(*pay)
+                    * if let Some(inter) = inter {
+                        inter.len() as f64
+                    } else {
+                        n_months as f64
+                    }
             })
             .sum()
     }

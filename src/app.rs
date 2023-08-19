@@ -193,7 +193,7 @@ impl MonthlyPaymentState {
         Self {
             payments: MonthlyPayments::from_single_payment(payment),
             pay_fields: vec![payment_str],
-            sliders: vec![]
+            sliders: vec![],
         }
     }
     fn from_between(start: Date, end: Date) -> BlcResult<Self> {
