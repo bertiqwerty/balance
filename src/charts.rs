@@ -75,7 +75,7 @@ impl MonthlyPayments {
             })
             .collect())
     }
-    pub fn sum_payments_total(&self, n_months: usize, f: impl Fn(f64) -> f64) -> f64 {
+    pub fn sum_payments_total(&self, n_total_months: usize, f: impl Fn(f64) -> f64) -> f64 {
         self.payments
             .iter()
             .zip(self.intervals.iter())
@@ -84,7 +84,7 @@ impl MonthlyPayments {
                     * if let Some(inter) = inter {
                         inter.len() as f64
                     } else {
-                        n_months as f64
+                        n_total_months as f64
                     }
             })
             .sum()
@@ -802,4 +802,6 @@ fn test_monthly_payments() {
         .unwrap();
     let expanded = mp.expand_payments(start, end, |x| x).unwrap();
     assert_eq!(expanded, vec![100.0; 12]);
+    let x = mp.sum_payments_total(12, |x| x);
+    assert_eq!(x, 1200.0);
 }
