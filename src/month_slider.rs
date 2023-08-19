@@ -69,9 +69,7 @@ impl MonthSlider {
         self.slider_state.slider_idx(self.possible_dates.len())
     }
 
-    pub fn month_slider(&mut self, ui: &mut Ui, label: &str) -> bool {
-        ui.label(label);
-
+    pub fn month_slider(&mut self, ui: &mut Ui) -> bool {
         if let Some(tmp_idx) = self.slider_idx() {
             let mut tmp_idx = tmp_idx;
             let changed = ui
@@ -107,7 +105,7 @@ impl MonthSliderPair {
         }
     }
     pub fn start_slider(&mut self, ui: &mut Ui) -> bool {
-        let released = self.start_slider.month_slider(ui, "begin");
+        let released = self.start_slider.month_slider(ui);
 
         if self.start_slider.is_at_end() {
             self.start_slider.move_left();
@@ -120,7 +118,7 @@ impl MonthSliderPair {
         released
     }
     pub fn end_slider(&mut self, ui: &mut Ui) -> bool {
-        let released = self.end_slider.month_slider(ui, "end");
+        let released = self.end_slider.month_slider(ui);
 
         if self.end_slider.is_at_start() {
             self.end_slider.move_right();

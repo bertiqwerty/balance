@@ -15,27 +15,6 @@ use egui::{
 use std::iter::Iterator;
 use std::{fmt::Display, iter, mem, ops::RangeInclusive, str::FromStr};
 
-macro_rules! payments_iter {
-    ($start:expr, $end:expr, $payments:expr, $intervals:expr, $f:expr) => {
-        Interval::new($start, $end)?
-            .into_iter()
-            .map(|current_date| {
-                $payments
-                    .iter()
-                    .zip($intervals.iter())
-                    .filter(|(_, inter)| {
-                        if let Some(inter) = inter {
-                            inter.contains(current_date)
-                        } else {
-                            true
-                        }
-                    })
-                    .map(|(pay, _)| $f(*pay))
-                    .sum::<f64>()
-            })
-    };
-}
-
 #[derive(Default, Debug, Clone)]
 pub struct MonthlyPayments {
     // payment per interval
@@ -43,18 +22,6 @@ pub struct MonthlyPayments {
     intervals: Vec<Option<Interval>>,
 }
 impl MonthlyPayments {
-    pub fn new(payments: Vec<f64>, starts: Vec<Date>, ends: Vec<Date>) -> BlcResult<Self> {
-        if payments.len() != starts.len() || payments.len() != ends.len() {
-            Err(blcerr!("payments and intervals need to be equally long"))
-        } else {
-            let intervals = starts
-                .iter()
-                .zip(ends.iter())
-                .map(|(s, e)| Interval::new(*s, *e))
-                .collect::<BlcResult<Vec<Interval>>>()?;
-            MonthlyPayments::from_intervals(payments, intervals)
-        }
-    }
     pub fn from_intervals(payments: Vec<f64>, intervals: Vec<Interval>) -> BlcResult<Self> {
         if payments.len() != intervals.len() {
             Err(blcerr!("payments and intervals need to be equally long"))
@@ -70,11 +37,6 @@ impl MonthlyPayments {
             payments: vec![payment],
             intervals: vec![None],
         }
-    }
-    pub fn add(&mut self, payment: f64, start: Date, end: Date) -> BlcResult<()> {
-        self.payments.push(payment);
-        self.intervals.push(Some(Interval::new(start, end)?));
-        Ok(())
     }
     ///
     /// Creates a vector of payments over months. If intervals have overlap their payments will be added.
@@ -95,7 +57,23 @@ impl MonthlyPayments {
         end: Date,
         f: impl Fn(f64) -> f64,
     ) -> BlcResult<Vec<f64>> {
-        Ok(payments_iter!(start, end, self.payments, self.intervals, f).collect())
+        Ok(Interval::new(start, end)?
+            .into_iter()
+            .map(|current_date| {
+                self.payments
+                    .iter()
+                    .zip(self.intervals.iter())
+                    .filter(|(_, inter)| {
+                        if let Some(inter) = inter {
+                            inter.contains(current_date)
+                        } else {
+                            true
+                        }
+                    })
+                    .map(|(pay, _)| f(*pay))
+                    .sum::<f64>()
+            })
+            .collect())
     }
     pub fn sum_payments_total(&self, n_months: usize, f: impl Fn(f64) -> f64) -> f64 {
         self.payments
@@ -339,7 +317,6 @@ impl Chart {
         initial_balance: Option<f64>,
     ) -> BlcResult<Line> {
         let vals = self.values_between_dates(start_date, end_date, initial_balance)?;
-        println!("{:?}\n", vals[0]);
         Ok(Line::new(vals).name(self.name.clone()))
     }
 
@@ -381,9 +358,11 @@ impl Charts {
     }
 
     pub fn start_slider(&mut self, ui: &mut Ui) -> bool {
+        ui.label("begin");
         self.user_start_end.start_slider(ui)
     }
     pub fn end_slider(&mut self, ui: &mut Ui) -> bool {
+        ui.label("end");
         self.user_start_end.end_slider(ui)
     }
 
@@ -808,4 +787,19 @@ fn test_adaptfractions() {
     test(vec![0.9, 0.1, 0.1], vec![0.9, 0.05, 0.05], 0, &[]);
     test(vec![1.9, 0.1, 0.1], vec![1.0, 0.0, 0.0], 0, &[]);
     test(vec![-1.9, 0.3, 0.1], vec![0.0, 0.6, 0.4], 0, &[]);
+}
+
+#[test]
+fn test_monthly_payments() {
+    let start = Date::from_str("2000/01").unwrap();
+    let end = Date::from_str("2000/12").unwrap();
+
+    let mp = MonthlyPayments::from_single_payment(100.0);
+    let expanded = mp.expand_payments(start, end, |x| x).unwrap();
+    assert_eq!(expanded, vec![100.0; 12]);
+
+    let mp = MonthlyPayments::from_intervals(vec![100.0], vec![Interval::new(start, end).unwrap()])
+        .unwrap();
+    let expanded = mp.expand_payments(start, end, |x| x).unwrap();
+    assert_eq!(expanded, vec![100.0; 12]);
 }

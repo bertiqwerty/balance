@@ -67,6 +67,7 @@ impl Iterator for IntervalIter {
     }
 }
 
+/// Intervals include both, start and end
 #[derive(Clone, Copy, Debug)]
 pub struct Interval {
     start: Date,
@@ -78,7 +79,7 @@ impl Interval {
         Ok(Self {
             start,
             end,
-            len_in_months: start.n_month_until(end)?,
+            len_in_months: start.n_month_until(end)? + 1,
         })
     }
     pub fn len(&self) -> usize {
@@ -91,7 +92,7 @@ impl Interval {
         self.end
     }
     pub fn contains(&self, d: Date) -> bool {
-        self.start >= d && d <= self.end
+        self.start <= d && d <= self.end
     }
 }
 impl IntoIterator for &Interval {
@@ -258,4 +259,15 @@ fn test_arith() {
     let d1 = Date::from_str("1988/02").unwrap();
     let d2 = Date::from_str("1999/01").unwrap();
     assert_eq!(((d1 + 10 * 12).unwrap() + 11).unwrap(), d2);
+}
+
+#[test]
+fn test_interval() {
+    let d1 = Date::from_str("1988/02").unwrap();
+    let d2 = Date::from_str("1999/01").unwrap();
+    let inter = Interval::new(d1, d2).unwrap();
+    assert_eq!(inter.len(), 132);
+    assert!(inter.contains(d1));
+    assert!(inter.contains(d2));
+    assert!(inter.contains(Date::from_str("1989/07").unwrap()));
 }

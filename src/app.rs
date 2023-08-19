@@ -42,6 +42,14 @@ fn download_str(s: &str, tmp_filename: &str) -> Result<(), JsValue> {
     Ok(())
 }
 
+macro_rules! recompute {
+    ($self:expr) => {
+        $self.best_rebalance_trigger = None;
+        $self.recompute_balance();
+        $self.recompute_rebalance_stats(false);
+    };
+}
+
 fn export_csv(charts: &Charts) -> BlcResult<()> {
     let tmp_filename = "charts.csv";
 
@@ -62,6 +70,19 @@ fn export_csv(charts: &Charts) -> BlcResult<()> {
 extern "C" {
     #[wasm_bindgen(js_namespace = console)]
     fn log(s: &str);
+}
+
+fn remove_indices<T: Clone>(v: &mut Vec<T>, to_be_deleted: &[usize]) {
+    let mut target_idx = 0;
+    for src_idx in 0..v.len() {
+        if !to_be_deleted.contains(&src_idx) {
+            if src_idx != target_idx {
+                v[target_idx] = v[src_idx].clone();
+            }
+            target_idx += 1;
+        }
+    }
+    v.truncate(target_idx);
 }
 
 #[derive(Debug)]
@@ -195,16 +216,6 @@ impl MonthlyPaymentState {
             pay_fields: vec![payment_str],
             sliders: vec![],
         }
-    }
-    fn from_between(start: Date, end: Date) -> BlcResult<Self> {
-        let payment = 0.0;
-        let start_slider = MonthSlider::new(start, end, SliderState::None);
-        let end_slider = MonthSlider::new(start, end, SliderState::None);
-        Ok(Self {
-            payments: MonthlyPayments::from_single_payment(payment),
-            pay_fields: vec![format!("{payment:0.2}")],
-            sliders: vec![MonthSliderPair::new(start_slider, end_slider)],
-        })
     }
     fn parse(&mut self) -> BlcResult<()> {
         let payments = self
@@ -427,7 +438,8 @@ impl<'a> eframe::App for BalanceApp<'a> {
                             ui.label("#months");
                             ui.text_edit_singleline(&mut self.sim.n_months);
                             ui.end_row();
-                            self.sim.start_month_slider.month_slider(ui, "start date");
+                            ui.label("start date");
+                            self.sim.start_month_slider.month_slider(ui);
                         });
                     egui::CollapsingHeader::new("Advanced").show(ui, |ui| {
                         egui::Grid::new("simulate-advanced")
@@ -543,29 +555,100 @@ impl<'a> eframe::App for BalanceApp<'a> {
                 }
                 ui.separator();
                 heading2(ui, "2. Set (Re-)Balance");
-                egui::Grid::new("inputs-balance-payments-interval")
-                    .num_columns(2)
-                    .show(ui, |ui| {
-                        ui.label("Initial balance");
-                        if ui
-                            .text_edit_singleline(&mut self.payment.initial_balance.0)
-                            .changed()
-                        {
-                            self.best_rebalance_trigger = None;
-                            self.recompute_balance();
-                            self.recompute_rebalance_stats(false);
-                        }
-                        ui.end_row();
-                        ui.label("Monthly payment");
-                        if ui
-                            .text_edit_singleline(&mut self.payment.monthly_payments.pay_fields[0])
-                            .changed()
-                        {
-                            self.best_rebalance_trigger = None;
-                            self.recompute_balance();
-                            self.recompute_rebalance_stats(false);
-                        }
-                    });
+                ui.label("Initial balance");
+                if ui
+                    .text_edit_singleline(&mut self.payment.initial_balance.0)
+                    .changed()
+                {
+                    recompute!(self);
+                }
+                egui::CollapsingHeader::new("Monthly payments").show(ui, |ui| {
+                    egui::Grid::new("monthly-payments-interval")
+                        .num_columns(2)
+                        .show(ui, |ui| {
+                            let mut to_be_deleted = vec![];
+                            for i in 0..self.payment.monthly_payments.pay_fields.len() {
+                                if i > 0 {
+                                    ui.label(format!("Monthly payment {}", i + 1).as_str());
+                                } else {
+                                    ui.label("Monthly payments");
+                                }
+                                if ui
+                                    .text_edit_singleline(
+                                        &mut self.payment.monthly_payments.pay_fields[i],
+                                    )
+                                    .changed()
+                                {
+                                    recompute!(self);
+                                }
+                                if !self.payment.monthly_payments.sliders.is_empty() {
+                                    ui.end_row();
+                                    ui.label("");
+                                    if self.payment.monthly_payments.sliders[i].start_slider(ui) {
+                                        recompute!(self);
+                                    }
+                                    if ui.button("x").clicked() {
+                                        to_be_deleted.push(i);
+                                    }
+                                    ui.end_row();
+                                    ui.label("");
+                                    if self.payment.monthly_payments.sliders[i].end_slider(ui) {
+                                        recompute!(self);
+                                    }
+                                }
+                                ui.end_row();
+                            }
+                            remove_indices(
+                                &mut self.payment.monthly_payments.sliders,
+                                &to_be_deleted,
+                            );
+                            if self.payment.monthly_payments.pay_fields.len() > 1 {
+                                remove_indices(
+                                    &mut self.payment.monthly_payments.pay_fields,
+                                    &to_be_deleted,
+                                );
+                            }
+                            if !to_be_deleted.is_empty() {
+                                recompute!(self);
+                            }
+                            let button_label = if self.payment.monthly_payments.sliders.is_empty() {
+                                "Restrict or add"
+                            } else {
+                                "Add"
+                            };
+                            if ui.button(button_label).clicked() {
+                                let start_end = self.charts.start_end_date(true);
+                                match start_end {
+                                    Ok(se) => {
+                                        if !self.payment.monthly_payments.sliders.is_empty() {
+                                            self.payment
+                                                .monthly_payments
+                                                .pay_fields
+                                                .push("0.0".to_string());
+                                        }
+                                        let (start_date, end_date) = se;
+                                        let start_slider = MonthSlider::new(
+                                            start_date,
+                                            end_date,
+                                            SliderState::First,
+                                        );
+                                        let end_slider = MonthSlider::new(
+                                            start_date,
+                                            end_date,
+                                            SliderState::Last,
+                                        );
+                                        self.payment
+                                            .monthly_payments
+                                            .sliders
+                                            .push(MonthSliderPair::new(start_slider, end_slider));
+                                    }
+                                    Err(e) => {
+                                        self.status_msg = Some(e.msg.to_string());
+                                    }
+                                }
+                            }
+                        });
+                });
                 egui::CollapsingHeader::new("Rebalancing strategy").show(ui, |ui| {
                     egui::Grid::new("rebalancing-strategy-inputs").show(ui, |ui| {
                         ui.label("Rebalance interval [#months]");
@@ -591,15 +674,11 @@ impl<'a> eframe::App for BalanceApp<'a> {
                 egui::CollapsingHeader::new("Restrict timeline").show(ui, |ui| {
                     egui::Grid::new("restriction-of-timeline").show(ui, |ui| {
                         if self.charts.start_slider(ui) {
-                            self.best_rebalance_trigger = None;
-                            self.recompute_balance();
-                            self.recompute_rebalance_stats(false);
+                            recompute!(self);
                         }
                         ui.end_row();
                         if self.charts.end_slider(ui) {
-                            self.best_rebalance_trigger = None;
-                            self.recompute_balance();
-                            self.recompute_rebalance_stats(false);
+                            recompute!(self);
                         }
                     });
                 });
@@ -607,9 +686,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                     ui.separator();
                     egui::Grid::new("grid-persistend-charts").show(ui, |ui| {
                         if self.charts.fraction_sliders(ui) {
-                            self.best_rebalance_trigger = None;
-                            self.recompute_balance();
-                            self.recompute_rebalance_stats(false);
+                            recompute!(self);
                         }
                     });
                 }
