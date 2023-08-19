@@ -145,9 +145,10 @@ impl Date {
 impl Add<usize> for Date {
     type Output = BlcResult<Date>;
     fn add(self, rhs: usize) -> Self::Output {
-        let month = self.month() + rhs / 12;
-        let year = self.year() + rhs % 12 + month / 12;
+        let month = self.month() + rhs;
+        let year = self.year() + month / 12;
         let month = month % 12;
+        let month = if month == 0 { 12 } else { month };
         Date::new(year, month)
     }
 }
