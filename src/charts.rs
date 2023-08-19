@@ -2,12 +2,11 @@ use crate::{
     blcerr,
     compute::{
         adapt_pricedev_to_initial_balance, best_rebalance_trigger, compute_balance_over_months,
-        find_shortestlen, rebalance_stats, BestRebalanceTrigger, RebalanceData, RebalanceStats,
-        RebalanceTrigger,
+        rebalance_stats, BestRebalanceTrigger, RebalanceData, RebalanceStats, RebalanceTrigger,
     },
     core_types::BlcResult,
-    date::{fill_between, n_month_between_dates, Date},
-    month_slider::{MonthSlider, SliderState},
+    date::{fill_between, Date, Interval},
+    month_slider::{MonthSlider, MonthSliderPair, SliderState},
 };
 use egui::{
     plot::{Corner, Legend, Line},
@@ -15,6 +14,103 @@ use egui::{
 };
 use std::iter::Iterator;
 use std::{fmt::Display, iter, mem, ops::RangeInclusive, str::FromStr};
+
+macro_rules! payments_iter {
+    ($start:expr, $end:expr, $payments:expr, $intervals:expr, $f:expr) => {
+        Interval::new($start, $end)?
+            .into_iter()
+            .map(|current_date| {
+                $payments
+                    .iter()
+                    .zip($intervals.iter())
+                    .filter(|(_, inter)| {
+                        if let Some(inter) = inter {
+                            inter.contains(current_date)
+                        } else {
+                            true
+                        }
+                    })
+                    .map(|(pay, _)| $f(*pay))
+                    .sum::<f64>()
+            })
+    };
+}
+
+#[derive(Default, Debug, Clone)]
+pub struct MonthlyPayments {
+    // payment per interval
+    payments: Vec<f64>,
+    intervals: Vec<Option<Interval>>,
+}
+impl MonthlyPayments {
+    pub fn new(payments: Vec<f64>, starts: Vec<Date>, ends: Vec<Date>) -> BlcResult<Self> {
+        if payments.len() != starts.len() || payments.len() != ends.len() {
+            Err(blcerr!("payments and intervals need to be equally long"))
+        } else {
+            let intervals = starts
+                .iter()
+                .zip(ends.iter())
+                .map(|(s, e)| Interval::new(*s, *e))
+                .collect::<BlcResult<Vec<Interval>>>()?;
+            MonthlyPayments::from_intervals(payments, intervals)
+        }
+    }
+    pub fn from_intervals(payments: Vec<f64>, intervals: Vec<Interval>) -> BlcResult<Self> {
+        if payments.len() != intervals.len() {
+            Err(blcerr!("payments and intervals need to be equally long"))
+        } else {
+            Ok(MonthlyPayments {
+                payments,
+                intervals: intervals.into_iter().map(Some).collect(),
+            })
+        }
+    }
+    pub fn from_single_payment(payment: f64) -> Self {
+        MonthlyPayments {
+            payments: vec![payment],
+            intervals: vec![None],
+        }
+    }
+    pub fn add(&mut self, payment: f64, start: Date, end: Date) -> BlcResult<()> {
+        self.payments.push(payment);
+        self.intervals.push(Some(Interval::new(start, end)?));
+        Ok(())
+    }
+    ///
+    /// Creates a vector of payments over months. If intervals have overlap their payments will be added.
+    ///
+    /// # Arguments
+    ///
+    /// * start: start of complete time axis
+    /// * end: end of complete time axis (including)
+    /// * f: function that will be applied to each payment before collecting in result vector
+    ///
+    /// # Errors
+    ///
+    /// * Number of payments and intervals do not match
+    ///
+    pub fn expand_payments(
+        &self,
+        start: Date,
+        end: Date,
+        f: impl Fn(f64) -> f64,
+    ) -> BlcResult<Vec<f64>> {
+        Ok(payments_iter!(start, end, self.payments, self.intervals, f).collect())
+    }
+    pub fn sum_payments_total(&self, n_months: usize, f: impl Fn(f64) -> f64) -> f64 {
+        self.payments
+            .iter()
+            .zip(self.intervals.iter())
+            .map(|(pay, inter)| {
+                f(*pay) * if let Some(inter) = inter {
+                    inter.len() as f64
+                } else {
+                    n_months as f64
+                }
+            })
+            .sum()
+    }
+}
 
 /// Intersects all timelines of all given charts
 fn start_end_date<'a>(charts: impl Iterator<Item = &'a Chart> + Clone) -> BlcResult<(Date, Date)> {
@@ -271,48 +367,28 @@ pub struct Charts {
     total_balance_over_month: Option<Chart>,
     total_payments_over_month: Option<Chart>,
     pub plot_balance: bool,
-    pub user_start: MonthSlider,
-    pub user_end: MonthSlider,
+    pub user_start_end: MonthSliderPair,
 }
 impl Charts {
     pub fn update_start_end_sliders(&mut self) {
         let start_end = start_end_date(self.persisted_and_tmp_iter());
         if let Ok((start, end)) = start_end {
-            self.user_start = MonthSlider::new(start, end, SliderState::First);
-            self.user_end = MonthSlider::new(start, end, SliderState::Last);
+            let start_slider = MonthSlider::new(start, end, SliderState::First);
+            let end_slider = MonthSlider::new(start, end, SliderState::Last);
+            self.user_start_end = MonthSliderPair::new(start_slider, end_slider);
         }
     }
 
     pub fn start_slider(&mut self, ui: &mut Ui) -> bool {
-        let released = self.user_start.month_slider(ui, "begin");
-
-        if self.user_start.is_at_end() {
-            self.user_start.move_left();
-        }
-        while self.user_start.is_initialized()
-            && self.user_end.selected_date() <= self.user_start.selected_date()
-        {
-            self.user_end.move_right();
-        }
-        released
+        self.user_start_end.start_slider(ui)
     }
     pub fn end_slider(&mut self, ui: &mut Ui) -> bool {
-        let released = self.user_end.month_slider(ui, "end");
-
-        if self.user_end.is_at_start() {
-            self.user_end.move_right();
-        }
-        while self.user_end.is_initialized()
-            && self.user_end.selected_date() <= self.user_start.selected_date()
-        {
-            self.user_start.move_left();
-        }
-        released
+        self.user_start_end.end_slider(ui)
     }
 
     pub fn n_months_persisted(&self) -> BlcResult<usize> {
         let (start, end) = self.start_end_date(false)?;
-        n_month_between_dates(start, end)
+        start.n_month_until(end)
     }
 
     pub fn start_end_date(&self, with_tmp: bool) -> BlcResult<(Date, Date)> {
@@ -325,12 +401,12 @@ impl Charts {
         } else {
             start_end_date(self.persisted.iter())?
         };
-        let start = if let Some(user_start) = self.user_start.selected_date() {
+        let start = if let Some(user_start) = self.user_start_end.selected_start_date() {
             user_start
         } else {
             start
         };
-        let end = if let Some(user_end) = self.user_end.selected_date() {
+        let end = if let Some(user_end) = self.user_start_end.selected_end_date() {
             user_end
         } else {
             end
@@ -430,7 +506,7 @@ impl Charts {
     fn gather_compute_data(
         &self,
         initial_balance: f64,
-        monthly_payments: f64,
+        monthly_payments: &MonthlyPayments,
         start_date: Date,
         end_date: Date,
     ) -> BlcResult<ComputeData<'_>> {
@@ -439,7 +515,6 @@ impl Charts {
             .iter()
             .map(|c| c.sliced_values(start_date, end_date))
             .collect::<BlcResult<Vec<_>>>()?;
-        let shortest_len = find_shortestlen(&price_devs)?;
         let initial_balances = self
             .fractions
             .iter()
@@ -448,15 +523,15 @@ impl Charts {
         let monthly_payments = self
             .fractions
             .iter()
-            .map(|fr| vec![monthly_payments * *fr; shortest_len - 1])
-            .collect::<Vec<_>>();
+            .map(|fr| monthly_payments.expand_payments(start_date, end_date, |x| x * fr))
+            .collect::<BlcResult<Vec<_>>>()?;
         Ok((price_devs, initial_balances, monthly_payments))
     }
 
     pub fn find_bestrebalancetrigger(
         &self,
         initial_balance: f64,
-        monthly_payments: f64,
+        monthly_payments: &MonthlyPayments,
     ) -> BlcResult<BestRebalanceTrigger> {
         let (start_date, end_date) = self.start_end_date(false)?;
         let (price_devs, initial_balances, monthly_payments) =
@@ -470,7 +545,7 @@ impl Charts {
     pub fn compute_rebalancestats(
         &self,
         initial_balance: f64,
-        monthly_payments: f64,
+        monthly_payments: &MonthlyPayments,
         rebalance_trigger: RebalanceTrigger,
     ) -> BlcResult<RebalanceStats> {
         let (start_date, end_date) = self.start_end_date(false)?;
@@ -495,7 +570,7 @@ impl Charts {
     pub fn compute_balance(
         &mut self,
         initial_balance: f64,
-        monthly_payments: f64,
+        monthly_payments: &MonthlyPayments,
         rebalance_trigger: RebalanceTrigger,
     ) -> BlcResult<()> {
         let (start_date, end_date) = self.start_end_date(false)?;

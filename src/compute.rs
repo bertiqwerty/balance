@@ -1,6 +1,6 @@
 use crate::{
     blcerr,
-    core_types::{to_blc, BlcResult},
+    core_types::{to_blc, BlcResult}, charts::MonthlyPayments,
 };
 use rand::{rngs::StdRng, SeedableRng};
 use rand_distr::{Distribution, Normal};
@@ -8,11 +8,11 @@ use std::iter;
 
 pub fn yearly_return(
     initial_payment: f64,
-    monthly_payment: f64,
+    monthly_payments: &MonthlyPayments,
     n_months: usize,
     final_balance: f64,
 ) -> (f64, f64) {
-    let total_monthly = monthly_payment * (n_months - 1) as f64;
+    let total_monthly = monthly_payments.sum_payments_total(n_months, |x|x);
     let total_yield = final_balance / (initial_payment + total_monthly);
     let yearly_return_perc = 100.0 * (total_yield.powf(1.0 / ((n_months - 1) as f64 / 12.0)) - 1.0);
     (yearly_return_perc, total_yield)

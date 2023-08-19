@@ -94,3 +94,48 @@ impl MonthSlider {
         self.slider_idx().map(|idx| self.possible_dates[idx])
     }
 }
+#[derive(Default, Debug, Clone)]
+pub struct MonthSliderPair {
+    start_slider: MonthSlider,
+    end_slider: MonthSlider,
+}
+impl MonthSliderPair {
+    pub fn new(start_slider: MonthSlider, end_slider: MonthSlider) -> Self {
+        Self {
+            start_slider,
+            end_slider,
+        }
+    }
+    pub fn start_slider(&mut self, ui: &mut Ui) -> bool {
+        let released = self.start_slider.month_slider(ui, "begin");
+
+        if self.start_slider.is_at_end() {
+            self.start_slider.move_left();
+        }
+        while self.start_slider.is_initialized()
+            && self.end_slider.selected_date() <= self.start_slider.selected_date()
+        {
+            self.end_slider.move_right();
+        }
+        released
+    }
+    pub fn end_slider(&mut self, ui: &mut Ui) -> bool {
+        let released = self.end_slider.month_slider(ui, "end");
+
+        if self.end_slider.is_at_start() {
+            self.end_slider.move_right();
+        }
+        while self.end_slider.is_initialized()
+            && self.end_slider.selected_date() <= self.start_slider.selected_date()
+        {
+            self.start_slider.move_left();
+        }
+        released
+    }
+    pub fn selected_start_date(&self) -> Option<Date> {
+        self.start_slider.selected_date()
+    }
+    pub fn selected_end_date(&self) -> Option<Date> {
+        self.end_slider.selected_date()
+    }
+}

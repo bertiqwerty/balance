@@ -1,13 +1,13 @@
 use crate::blcerr;
-use crate::charts::{Chart, Charts, TmpChart};
+use crate::charts::{Chart, Charts, MonthlyPayments, TmpChart};
 use crate::compute::{
     random_walk, yearly_return, BestRebalanceTrigger, RebalanceStats, RebalanceStatsSummary,
     RebalanceTrigger,
 };
 use crate::core_types::{to_blc, BlcResult};
-use crate::date::{date_after_nmonths, Date};
+use crate::date::{date_after_nmonths, Date, Interval};
 use crate::io::read_csv_from_str;
-use crate::month_slider::{MonthSlider, SliderState};
+use crate::month_slider::{MonthSlider, MonthSliderPair, SliderState};
 use egui::{Context, Response, RichText, Ui};
 use std::fmt::Display;
 use std::iter;
@@ -180,26 +180,79 @@ impl SimInput {
     }
 }
 
+#[derive(Debug, Clone)]
+struct MonthlyPaymentState {
+    payments: MonthlyPayments,
+    pay_fields: Vec<String>,
+    sliders: Vec<MonthSliderPair>,
+}
+impl MonthlyPaymentState {
+    fn new() -> Self {
+        let payment = 0.0;
+        let payment_str = format!("{payment:0.2}");
+        Self {
+            payments: MonthlyPayments::from_single_payment(payment),
+            pay_fields: vec![payment_str],
+            sliders: vec![]
+        }
+    }
+    fn from_between(start: Date, end: Date) -> BlcResult<Self> {
+        let payment = 0.0;
+        let start_slider = MonthSlider::new(start, end, SliderState::None);
+        let end_slider = MonthSlider::new(start, end, SliderState::None);
+        Ok(Self {
+            payments: MonthlyPayments::from_single_payment(payment),
+            pay_fields: vec![format!("{payment:0.2}")],
+            sliders: vec![MonthSliderPair::new(start_slider, end_slider)],
+        })
+    }
+    fn parse(&mut self) -> BlcResult<()> {
+        let payments = self
+            .pay_fields
+            .iter()
+            .map(|ps| ps.parse::<f64>().map_err(to_blc))
+            .collect::<BlcResult<Vec<f64>>>()?;
+        let ok_or_date =
+            |d: Option<Date>| d.ok_or_else(|| blcerr!("no date selected for monthly payment"));
+        let intervals = self
+            .sliders
+            .iter()
+            .map(|slider_pair| {
+                Interval::new(
+                    ok_or_date(slider_pair.selected_start_date())?,
+                    ok_or_date(slider_pair.selected_end_date())?,
+                )
+            })
+            .collect::<BlcResult<Vec<Interval>>>()?;
+        self.payments = if intervals.is_empty() && payments.len() == 1 {
+            MonthlyPayments::from_single_payment(payments[0])
+        } else {
+            MonthlyPayments::from_intervals(payments, intervals)?
+        };
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone)]
 struct PaymentData {
     initial_balance: (String, f64),
-    monthly_payment: (String, f64),
+    monthly_payments: MonthlyPaymentState,
     rebalance_interval: (String, Option<usize>),
     rebalance_deviation: (String, Option<f64>),
 }
 impl PaymentData {
     fn new() -> Self {
         let initial_balance = 10000.0;
-        let monthly_payment = 0.0;
         PaymentData {
             initial_balance: (format!("{initial_balance:0.2}"), initial_balance),
-            monthly_payment: (format!("{monthly_payment:0.2}"), monthly_payment),
+            monthly_payments: MonthlyPaymentState::new(),
             rebalance_interval: ("".to_string(), None),
             rebalance_deviation: ("".to_string(), None),
         }
     }
     fn parse(&mut self) -> BlcResult<()> {
         self.initial_balance.1 = self.initial_balance.0.parse().map_err(to_blc)?;
-        self.monthly_payment.1 = self.monthly_payment.0.parse().map_err(to_blc)?;
+        self.monthly_payments.parse()?;
         self.rebalance_interval.1 = self.rebalance_interval.0.parse().ok();
         self.rebalance_deviation.1 = self
             .rebalance_deviation
@@ -228,13 +281,15 @@ pub struct BalanceApp<'a> {
 impl<'a> Default for BalanceApp<'a> {
     fn default() -> Self {
         let (rx, tx) = mpsc::channel();
+        let charts = Charts::default();
+
         Self {
             rx,
             tx,
             download: Download::None,
             status_msg: None,
             sim: SimInput::new(),
-            charts: Charts::default(),
+            charts,
             payment: PaymentData::new(),
             rebalance_stats: None,
             rebalance_stats_summary: None,
@@ -290,16 +345,16 @@ impl<'a> BalanceApp<'a> {
         } else {
             let PaymentData {
                 initial_balance: (_, initial_balance),
-                monthly_payment: (_, monthly_payment),
+                monthly_payments,
                 rebalance_interval: (_, interval),
                 rebalance_deviation: (_, deviation),
-            } = self.payment;
+            } = &self.payment;
             if let Err(e) = self.charts.compute_balance(
-                initial_balance,
-                monthly_payment,
+                *initial_balance,
+                &monthly_payments.payments,
                 RebalanceTrigger {
-                    interval,
-                    deviation,
+                    interval: *interval,
+                    deviation: *deviation,
                 },
             ) {
                 self.status_msg = Some(format!("{e}"));
@@ -312,18 +367,18 @@ impl<'a> BalanceApp<'a> {
     fn recompute_rebalance_stats(&mut self, always: bool) {
         let PaymentData {
             initial_balance: (_, initial_balance),
-            monthly_payment: (_, monthly_payment),
+            monthly_payments,
             rebalance_interval: (_, interval),
             rebalance_deviation: (_, deviation),
-        } = self.payment;
+        } = &self.payment;
         if self.rebalance_stats.is_some() || always {
             if interval.is_some() || deviation.is_some() {
                 let stats = self.charts.compute_rebalancestats(
-                    initial_balance,
-                    monthly_payment,
+                    *initial_balance,
+                    &monthly_payments.payments,
                     RebalanceTrigger {
-                        interval,
-                        deviation,
+                        interval: *interval,
+                        deviation: *deviation,
                     },
                 );
                 if let Ok(stats) = &stats {
@@ -503,7 +558,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                         ui.end_row();
                         ui.label("Monthly payment");
                         if ui
-                            .text_edit_singleline(&mut self.payment.monthly_payment.0)
+                            .text_edit_singleline(&mut self.payment.monthly_payments.pay_fields[0])
                             .changed()
                         {
                             self.best_rebalance_trigger = None;
@@ -575,12 +630,12 @@ impl<'a> eframe::App for BalanceApp<'a> {
                             ui.label("Final balance");
                             ui.label(RichText::new(format!("{balance:0.2}")).strong());
                             let initial_payment = self.payment.initial_balance.1;
-                            let monthly_payment = self.payment.monthly_payment.1;
+                            let monthly_payments = &self.payment.monthly_payments.payments;
                             match self.charts.n_months_persisted() {
                                 Ok(n_months) => {
                                     let (yearly_return_perc, total_yield) = yearly_return(
                                         initial_payment,
-                                        monthly_payment,
+                                        monthly_payments,
                                         n_months,
                                         *balance,
                                     );
@@ -644,13 +699,13 @@ impl<'a> eframe::App for BalanceApp<'a> {
                     {
                         let PaymentData {
                             initial_balance: (_, initial_balance),
-                            monthly_payment: (_, monthly_payment),
+                            monthly_payments,
                             rebalance_interval: (_, _),
                             rebalance_deviation: (_, _),
-                        } = self.payment;
+                        } = &self.payment;
                         self.best_rebalance_trigger = match self
                             .charts
-                            .find_bestrebalancetrigger(initial_balance, monthly_payment)
+                            .find_bestrebalancetrigger(*initial_balance, &monthly_payments.payments)
                         {
                             Ok(x) => Some(x),
                             Err(e) => {
@@ -682,7 +737,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                         ui.label("deviation threshold [%]");
                         ui.end_row();
                         let initial_payment = self.payment.initial_balance.1;
-                        let monthly_payment = self.payment.monthly_payment.1;
+                        let monthly_payments = self.payment.monthly_payments.payments.clone();
                         let toshow = iter::once(best_trigger.best)
                             .chain(iter::once(best_trigger.with_best_dev))
                             .chain(iter::once(best_trigger.with_best_interval));
@@ -691,7 +746,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                             if let Ok(n_months) = self.charts.n_months_persisted() {
                                 let (yearly_return_perc, _) = yearly_return(
                                     initial_payment,
-                                    monthly_payment,
+                                    &monthly_payments,
                                     n_months,
                                     balance,
                                 );

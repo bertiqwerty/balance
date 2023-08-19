@@ -1,5 +1,5 @@
 use std::iter;
-use std::{fmt::Display, str::FromStr};
+use std::{fmt::Display, ops::Add, ops::Sub, str::FromStr};
 
 use crate::core_types::BlcError;
 use crate::{
@@ -7,9 +7,9 @@ use crate::{
     core_types::{to_blc, BlcResult},
 };
 
-pub fn n_month_between_dates(earlier: Date, later: Date) -> BlcResult<usize> {
+fn n_month_between_dates(earlier: Date, later: Date) -> Option<usize> {
     if earlier > later {
-        Err(blcerr!("{earlier} is after {later}"))
+        None
     } else {
         let year_diff = later.year() - earlier.year();
         let (e_month, l_month) = (earlier.month(), later.month());
@@ -18,7 +18,7 @@ pub fn n_month_between_dates(earlier: Date, later: Date) -> BlcResult<usize> {
         } else {
             (12 - e_month + l_month, 1)
         };
-        Ok(12 * (year_diff - year_correction) + months_diff)
+        Some(12 * (year_diff - year_correction) + months_diff)
     }
 }
 
@@ -43,6 +43,67 @@ pub fn fill_between(start: Date, end: Date) -> Vec<Date> {
         }
     })
     .collect()
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct IntervalIter {
+    end: Date,
+    current: Date,
+    len_in_months: usize,
+}
+impl Iterator for IntervalIter {
+    type Item = Date;
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current > self.end {
+            None
+        } else {
+            let res = Some(self.current);
+            self.current = self.current.next_month();
+            res
+        }
+    }
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.len_in_months, Some(self.len_in_months))
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Interval {
+    start: Date,
+    end: Date,
+    len_in_months: usize,
+}
+impl Interval {
+    pub fn new(start: Date, end: Date) -> BlcResult<Self> {
+        Ok(Self {
+            start,
+            end,
+            len_in_months: start.n_month_until(end)?,
+        })
+    }
+    pub fn len(&self) -> usize {
+        self.len_in_months
+    }
+    pub fn start(&self) -> Date {
+        self.start
+    }
+    pub fn end(&self) -> Date {
+        self.end
+    }
+    pub fn contains(&self, d: Date) -> bool {
+        self.start >= d && d <= self.end
+    }
+}
+impl IntoIterator for &Interval {
+    type IntoIter = IntervalIter;
+    type Item = Date;
+    fn into_iter(self) -> Self::IntoIter {
+        IntervalIter {
+            current: self.start,
+            end: self.end,
+            len_in_months: self.len_in_months,
+        }
+    }
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Date {
@@ -75,6 +136,25 @@ impl Date {
         } else {
             Date::new(self.year(), self.month() + 1).unwrap()
         }
+    }
+
+    pub fn n_month_until(&self, later: Date) -> BlcResult<usize> {
+        (later - *self).ok_or_else(|| blcerr!("later must be after self"))
+    }
+}
+impl Add<usize> for Date {
+    type Output = BlcResult<Date>;
+    fn add(self, rhs: usize) -> Self::Output {
+        let month = self.month() + rhs / 12;
+        let year = self.year() + rhs % 12 + month / 12;
+        let month = month % 12;
+        Date::new(year, month)
+    }
+}
+impl Sub for Date {
+    type Output = Option<usize>;
+    fn sub(self, rhs: Self) -> Self::Output {
+        n_month_between_dates(rhs, self)
     }
 }
 impl Display for Date {
@@ -165,4 +245,16 @@ fn test_nextmonth() {
 #[test]
 fn test_tostring() {
     assert_eq!(&Date::from_str("1988/12").unwrap().to_string(), "1988/12")
+}
+
+#[test]
+fn test_arith() {
+    let d1 = Date::from_str("1988/12").unwrap();
+    let d2 = Date::from_str("1989/01").unwrap();
+    assert_eq!((d1 + 1).unwrap(), d2);
+    assert_eq!(d2 - d1, Some(1));
+    assert_eq!(d1 - d2, None);
+    let d1 = Date::from_str("1988/02").unwrap();
+    let d2 = Date::from_str("1999/01").unwrap();
+    assert_eq!(((d1 + 10 * 12).unwrap() + 11).unwrap(), d2);
 }
