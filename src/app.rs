@@ -275,6 +275,31 @@ impl PaymentData {
     }
 }
 
+struct FinalBalance {
+    final_balance: f64,
+    yearly_return_perc: f64,
+    total_yield: f64,
+}
+impl FinalBalance {
+    fn from_chart(
+        chart: &Chart,
+        initial_payment: f64,
+        monthly_payments: &MonthlyPayments,
+        n_months: usize,
+    ) -> BlcResult<Self> {
+        if let Some(final_balance) = chart.values().iter().last().copied() {
+            let (yearly_return_perc, total_yield) =
+                yearly_return(initial_payment, monthly_payments, n_months, final_balance);
+            Ok(FinalBalance {
+                final_balance,
+                yearly_return_perc,
+                total_yield,
+            })
+        } else {
+            Err(blcerr!("cannot compute final balance from empty chart"))
+        }
+    }
+}
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 pub struct BalanceApp<'a> {
     rx: mpsc::Sender<ehttp::Result<ehttp::Response>>,
@@ -287,6 +312,7 @@ pub struct BalanceApp<'a> {
     rebalance_stats: Option<BlcResult<RebalanceStats>>,
     rebalance_stats_summary: Option<BlcResult<RebalanceStatsSummary>>,
     best_rebalance_trigger: Option<BestRebalanceTrigger>,
+    final_balance: Option<FinalBalance>,
 }
 
 impl<'a> Default for BalanceApp<'a> {
@@ -305,6 +331,7 @@ impl<'a> Default for BalanceApp<'a> {
             rebalance_stats: None,
             rebalance_stats_summary: None,
             best_rebalance_trigger: None,
+            final_balance: None,
         }
     }
 }
@@ -353,6 +380,7 @@ impl<'a> BalanceApp<'a> {
     fn recompute_balance(&mut self) {
         if let Err(e) = self.payment.parse() {
             self.status_msg = Some(format!("{e}"));
+            self.final_balance = None;
         } else {
             let PaymentData {
                 initial_balance: (_, initial_balance),
@@ -369,9 +397,38 @@ impl<'a> BalanceApp<'a> {
                 },
             ) {
                 self.status_msg = Some(format!("{e}"));
+                self.final_balance = None;
             } else {
                 self.status_msg = None;
                 self.charts.plot_balance = true;
+                match (
+                    self.charts.total_balance_over_month(),
+                    self.charts.n_months_persisted(),
+                ) {
+                    (Some(tbom), Ok(n_months)) => {
+                        let final_balance = FinalBalance::from_chart(
+                            tbom,
+                            *initial_balance,
+                            &monthly_payments.payments,
+                            n_months,
+                        );
+                        match final_balance {
+                            Ok(final_balance) => {
+                                self.final_balance = Some(final_balance);
+                            }
+                            Err(e) => {
+                                self.status_msg = Some(e.to_string());
+                            }
+                        }
+                    }
+                    (_, Err(e)) => {
+                        self.status_msg = Some(e.to_string());
+                        self.final_balance = None;
+                    }
+                    (_, _) => {
+                        self.final_balance = None;
+                    }
+                }
             }
         }
     }
@@ -694,44 +751,25 @@ impl<'a> eframe::App for BalanceApp<'a> {
                 heading2(ui, "3. Investigate Results");
 
                 egui::Grid::new("balance-number-results").show(ui, |ui| {
-                    let nobalance = |ui: &mut Ui| {
+                    if let Some(final_balance) = &self.final_balance {
+                        let FinalBalance {
+                            final_balance,
+                            yearly_return_perc,
+                            total_yield,
+                        } = final_balance;
+                        ui.label("Final balance");
+                        ui.label(RichText::new(format!("{final_balance:0.2}")).strong());
+                        ui.label("Yearly reaturn [%]");
+                        ui.label(RichText::new(format!("{yearly_return_perc:0.2}")).strong());
+                        ui.label("Factor");
+                        ui.label(RichText::new(format!("{total_yield:0.2}")).strong());
+                    } else {
                         ui.label("Final balance");
                         ui.label("-");
                         ui.label("Yearly return [%]");
                         ui.label("-");
                         ui.label("Factor");
                         ui.label("-");
-                    };
-                    if let Some(tbom) = self.charts.total_balance_over_month() {
-                        if let Some(balance) = tbom.values().iter().last() {
-                            ui.label("Final balance");
-                            ui.label(RichText::new(format!("{balance:0.2}")).strong());
-                            let initial_payment = self.payment.initial_balance.1;
-                            let monthly_payments = &self.payment.monthly_payments.payments;
-                            match self.charts.n_months_persisted() {
-                                Ok(n_months) => {
-                                    let (yearly_return_perc, total_yield) = yearly_return(
-                                        initial_payment,
-                                        monthly_payments,
-                                        n_months,
-                                        *balance,
-                                    );
-                                    ui.label("Yearly reaturn [%]");
-                                    ui.label(
-                                        RichText::new(format!("{yearly_return_perc:0.2}")).strong(),
-                                    );
-                                    ui.label("Factor");
-                                    ui.label(RichText::new(format!("{total_yield:0.2}")).strong());
-                                }
-                                Err(e) => {
-                                    self.status_msg = Some(format!("{e}"));
-                                }
-                            }
-                        } else {
-                            nobalance(ui);
-                        }
-                    } else {
-                        nobalance(ui);
                     }
                 });
                 ui.horizontal(|ui| {

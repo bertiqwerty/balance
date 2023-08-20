@@ -473,6 +473,7 @@ impl Charts {
 
             if ui.button("x").clicked() {
                 remove_idx = Some(idx);
+                recompute = true;
             }
             ui.checkbox(&mut self.fractions_fixed[idx], "fix");
             ui.end_row();
