@@ -177,9 +177,9 @@ impl SimInput {
             is_eyr_independent: true,
             n_months: "360".to_string(),
             start_month_slider: MonthSlider::new(
-                Date::new(1950, 1).unwrap(),
-                Date::new(2022, 12).unwrap(),
-                SliderState::Some(346),
+                Date::new(1970, 1).unwrap(),
+                Date::new(2050, 12).unwrap(),
+                SliderState::Some(480),
             ),
         }
     }
