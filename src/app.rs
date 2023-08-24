@@ -481,7 +481,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
     }
     /// Called each time the UI needs repainting, which may be many times per second.
     /// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         self.check_download();
 
         #[cfg(not(target_arch = "wasm32"))] // no File->Quit on web pages!
@@ -490,7 +490,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
             egui::menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
                     if ui.button("Quit").clicked() {
-                        _frame.close();
+                        frame.close();
                     }
                 });
             });
@@ -499,6 +499,16 @@ impl<'a> eframe::App for BalanceApp<'a> {
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::ScrollArea::new([true, true]).show(ui, |ui| {
                 heading(ui, "Balance");
+                if ui.button("share").clicked() {
+                    let json = serde_json::to_string(&self).unwrap();
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    {
+                        let tmp_filename = "tmp.json";
+                        let mut tmp_file = File::create(tmp_filename).map_err(to_blc).unwrap();
+                        write!(tmp_file, "{json}").map_err(to_blc).unwrap();
+                    }
+                }
                 heading2(ui, "1. Add Charts");
                 egui::CollapsingHeader::new("Simulate").show(ui, |ui| {
                     egui::Grid::new("simulate-inputs")
