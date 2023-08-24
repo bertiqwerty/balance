@@ -1,11 +1,11 @@
-use std::iter;
-use std::{fmt::Display, ops::Add, ops::Sub, str::FromStr};
-
 use crate::core_types::BlcError;
 use crate::{
     blcerr,
     core_types::{to_blc, BlcResult},
 };
+use serde::{Deserialize, Serialize};
+use std::iter;
+use std::{fmt::Display, ops::Add, ops::Sub, str::FromStr};
 
 fn n_month_between_dates(earlier: Date, later: Date) -> Option<usize> {
     if earlier > later {
@@ -68,7 +68,7 @@ impl Iterator for IntervalIter {
 }
 
 /// Intervals include both, start and end
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct Interval {
     start: Date,
     end: Date,
@@ -106,7 +106,7 @@ impl IntoIterator for &Interval {
         }
     }
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
 pub struct Date {
     date: usize,
 }

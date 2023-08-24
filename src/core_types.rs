@@ -1,9 +1,10 @@
+use serde::{Deserialize, Serialize};
 use std::{
     error::Error,
     fmt::{Debug, Display},
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct BlcError {
     pub msg: String,
 }

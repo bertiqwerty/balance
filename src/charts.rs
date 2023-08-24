@@ -12,10 +12,11 @@ use egui::{
     plot::{Corner, Legend, Line},
     Ui,
 };
+use serde::{Deserialize, Serialize};
 use std::iter::Iterator;
 use std::{fmt::Display, iter, mem, ops::RangeInclusive, str::FromStr};
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct MonthlyPayments {
     // payment per interval
     payments: Vec<f64>,
@@ -263,7 +264,7 @@ fn slice_by_date<'a, T>(
     Ok(&to_be_sliced[start_idx..end_idx])
 }
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct Chart {
     name: String,
     dates: Vec<Date>,
@@ -331,12 +332,12 @@ impl Chart {
 
 type ComputeData<'a> = (Vec<&'a [f64]>, Vec<f64>, Vec<Vec<f64>>);
 
-#[derive(Default, Clone, Debug)]
+#[derive(Default, Clone, Debug, Serialize, Deserialize)]
 pub struct TmpChart {
     pub chart: Chart,
     pub initial_balance: f64,
 }
-#[derive(Default, Clone, Debug)]
+#[derive(Default, Clone, Debug, Serialize, Deserialize)]
 pub struct Charts {
     tmp: Option<TmpChart>,
     pub persisted: Vec<Chart>,

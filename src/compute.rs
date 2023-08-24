@@ -5,8 +5,8 @@ use crate::{
 };
 use rand::{rngs::StdRng, SeedableRng};
 use rand_distr::{Distribution, Normal};
+use serde::{Deserialize, Serialize};
 use std::iter;
-
 pub fn yearly_return(
     initial_payment: f64,
     monthly_payments: &MonthlyPayments,
@@ -19,7 +19,7 @@ pub fn yearly_return(
     (yearly_return_perc, total_yield)
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
 pub struct RebalanceTrigger {
     pub interval: Option<usize>,
     pub deviation: Option<f64>,
@@ -224,7 +224,7 @@ pub fn random_walk(
     Ok(res)
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct RebalanceStatRecord {
     pub mean_w_reb: f64,
     pub mean_wo_reb: f64,
@@ -241,7 +241,7 @@ fn compute_mean(
     s / (end - begin) as f64
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RebalanceStats {
     pub records: Vec<RebalanceStatRecord>,
 }
@@ -295,6 +295,7 @@ impl RebalanceStats {
     }
 }
 
+#[derive(Deserialize, Serialize)]
 pub struct RebalanceStatsSummary {
     pub min_n_months: usize,
     pub max_n_months: usize,
@@ -355,6 +356,7 @@ pub fn rebalance_stats<'a>(
     Ok(RebalanceStats { records })
 }
 
+#[derive(Deserialize, Serialize)]
 pub struct BestRebalanceTrigger {
     pub best: (RebalanceTrigger, f64),
     pub with_best_dev: (RebalanceTrigger, f64),

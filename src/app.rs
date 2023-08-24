@@ -9,6 +9,7 @@ use crate::date::{date_after_nmonths, Date, Interval};
 use crate::io::read_csv_from_str;
 use crate::month_slider::{MonthSlider, MonthSliderPair, SliderState};
 use egui::{Context, Response, RichText, Ui};
+use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 use std::iter;
 use std::sync::mpsc;
@@ -92,7 +93,7 @@ enum Download<'a> {
     Done((&'a str, ehttp::Result<ehttp::Response>)),
 }
 
-#[derive(PartialEq, Clone)]
+#[derive(PartialEq, Clone, Serialize, Deserialize)]
 struct Vola {
     amount: VolaAmount,
     smoothing: bool,
@@ -115,7 +116,7 @@ impl Display for Vola {
         f.write_str(&format!("{}_{}", self.amount, self.smoothing))
     }
 }
-#[derive(PartialEq, Clone)]
+#[derive(PartialEq, Clone, Serialize, Deserialize)]
 enum VolaAmount {
     No,
     Lo,
@@ -162,6 +163,7 @@ fn heading(ui: &mut Ui, s: &str) -> Response {
     ui.heading(RichText::new(s).strong().size(30.0))
 }
 
+#[derive(Serialize, Deserialize)]
 struct SimInput {
     vola: Vola,
     expected_yearly_return: String,
@@ -201,7 +203,7 @@ impl SimInput {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct MonthlyPaymentState {
     payments: MonthlyPayments,
     pay_fields: Vec<String>,
@@ -244,7 +246,7 @@ impl MonthlyPaymentState {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct PaymentData {
     initial_balance: (String, f64),
     monthly_payments: MonthlyPaymentState,
@@ -275,6 +277,7 @@ impl PaymentData {
     }
 }
 
+#[derive(Deserialize, Serialize)]
 struct FinalBalance {
     final_balance: f64,
     yearly_return_perc: f64,
@@ -301,9 +304,14 @@ impl FinalBalance {
     }
 }
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
+#[derive(Deserialize, Serialize)]
+#[serde(default)] // if we add new fields, give them default values when deserializing old state
 pub struct BalanceApp<'a> {
+    #[serde(skip)]
     rx: mpsc::Sender<ehttp::Result<ehttp::Response>>,
+    #[serde(skip)]
     tx: mpsc::Receiver<ehttp::Result<ehttp::Response>>,
+    #[serde(skip)]
     download: Download<'a>,
     status_msg: Option<String>,
     sim: SimInput,
@@ -338,7 +346,12 @@ impl<'a> Default for BalanceApp<'a> {
 
 impl<'a> BalanceApp<'a> {
     /// Called once before the first frame.
-    pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        // Load previous app state (if any).
+        // Note that you must enable the `persistence` feature for this to work.
+        if let Some(storage) = cc.storage {
+            return eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
+        }
         // This is also where you can customize the look and feel of egui using
         // `cc.egui_ctx.set_visuals` and `cc.egui_ctx.set_fonts`.
 
@@ -463,7 +476,9 @@ impl<'a> BalanceApp<'a> {
 
 impl<'a> eframe::App for BalanceApp<'a> {
     /// Called by the frame work to save state before shutdown.
-
+    fn save(&mut self, storage: &mut dyn eframe::Storage) {
+        eframe::set_value(storage, eframe::APP_KEY, self);
+    }
     /// Called each time the UI needs repainting, which may be many times per second.
     /// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {

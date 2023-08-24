@@ -1,8 +1,9 @@
 use egui::Ui;
+use serde::{Deserialize, Serialize};
 
 use crate::date::{fill_between, Date};
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, Deserialize, Serialize)]
 pub enum SliderState {
     First,
     Last,
@@ -25,7 +26,7 @@ impl SliderState {
     }
 }
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct MonthSlider {
     slider_state: SliderState,
     possible_dates: Vec<Date>,
@@ -92,7 +93,7 @@ impl MonthSlider {
         self.slider_idx().map(|idx| self.possible_dates[idx])
     }
 }
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct MonthSliderPair {
     start_slider: MonthSlider,
     end_slider: MonthSlider,
