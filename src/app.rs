@@ -104,8 +104,8 @@ enum RestRequestState<'a> {
 }
 
 enum RestMethod {
-    GET,
-    POST(Vec<u8>),
+    Get,
+    Post(Vec<u8>),
 }
 
 struct RestRequest<'a> {
@@ -137,8 +137,8 @@ impl<'a> RestRequest<'a> {
     }
     pub fn trigger(&mut self, url: &str, name: &'a str, method: RestMethod, ctx: Option<Context>) {
         let req = match method {
-            RestMethod::GET => ehttp::Request::get(url),
-            RestMethod::POST(body) => ehttp::Request::post(url, body),
+            RestMethod::Get => ehttp::Request::get(url),
+            RestMethod::Post(body) => ehttp::Request::post(url, body),
         };
         let tx = self.tx.clone();
         ehttp::fetch(req, move |response| {
@@ -447,7 +447,7 @@ impl<'a> BalanceApp<'a> {
         let name = "sharelink";
         let self_json_string = serde_json::to_string(self).unwrap();
         let json_data = format!("{{\"json_data\": {} }}", self_json_string);
-        let method = RestMethod::POST(json_data.into_bytes());
+        let method = RestMethod::Post(json_data.into_bytes());
         self.sharelink_request
             .trigger(url, name, method, Some(ctx.clone()));
     }
@@ -494,11 +494,11 @@ impl<'a> BalanceApp<'a> {
         }
     }
 
-    pub fn trigger_load(&mut self, link_with_sessionid: &str, ctx: Option<&Context>) -> () {
+    pub fn trigger_load(&mut self, link_with_sessionid: &str, ctx: Option<&Context>) {
         if let Some(session_id) = sessionid_from_link(link_with_sessionid) {
             let url = format!("{URL_READ_SHARELINK}?session_id={session_id}");
             self.load_request
-                .trigger(url.as_str(), "load", RestMethod::GET, ctx.cloned())
+                .trigger(url.as_str(), "load", RestMethod::Get, ctx.cloned())
         } else {
             self.status_msg = Some(format!(
                 "invalid link with session id {link_with_sessionid}"
@@ -768,7 +768,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                             self.download_historic_csv.trigger(
                                 &url,
                                 name,
-                                RestMethod::GET,
+                                RestMethod::Get,
                                 Some(ctx.clone()),
                             );
                             self.charts.plot_balance = false;
