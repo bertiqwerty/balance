@@ -4,18 +4,26 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
-pub const URL_WRITE_SHARELINK: &str = "https://bertiqwerty.com/balance_storage/write.php";
-pub const URL_READ_SHARELINK: &str = "https://bertiqwerty.com/balance_storage/read.php";
+pub const URL_WRITE_SHARELINK: &str = "https://www.bertiqwerty.com/balance_storage/write.php";
+pub const URL_READ_SHARELINK: &str = "https://www.bertiqwerty.com/balance_storage/read.php";
 
 pub fn sessionid_to_link(session_id: &str) -> String {
-    format!("https://bertiqwerty.com/index.html?session_id={session_id}")
+    format!("https://www.bertiqwerty.com/balance/index.html?session_id={session_id}")
 }
 
 pub fn sessionid_from_link(link: &str) -> Option<String> {
-    link.split('?')
-        .last()
-        .and_then(|s| s.split("session_id=").last())
-        .map(|s| s.chars().take_while(|c| c.is_alphanumeric()).collect::<String>())
+    if link.contains("session_id=") {
+        link.split('?')
+            .last()
+            .and_then(|s| s.split("session_id=").last())
+            .map(|s| {
+                s.chars()
+                    .take_while(|c| c.is_alphanumeric())
+                    .collect::<String>()
+            })
+    } else {
+        None
+    }
 }
 
 #[derive(Serialize, Deserialize)]

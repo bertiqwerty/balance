@@ -18,7 +18,6 @@ use std::fmt::Display;
 use std::iter;
 use std::sync::mpsc::Sender;
 use std::sync::mpsc::{self, Receiver};
-// use wasm_bindgen::prelude::*;
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::{fs::File, io::Write};
@@ -27,7 +26,7 @@ use std::{fs::File, io::Write};
 use {
     wasm_bindgen::prelude::*,
     wasm_bindgen::JsValue,
-    web_sys::{Blob, HtmlElement, Url},
+    web_sys::{window, Blob, HtmlElement, Url},
 };
 
 // const BASE_URL_WWW: &str = "http://localhost:8000/data";
@@ -45,6 +44,12 @@ fn download_str(s: &str, tmp_filename: &str) -> Result<(), JsValue> {
     download_link.click();
     Url::revoke_object_url(&url)?;
     Ok(())
+}
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn get_current_url() -> String {
+    window().unwrap().location().href().unwrap()
 }
 
 macro_rules! recompute {
@@ -130,7 +135,7 @@ impl<'a> RestRequest<'a> {
             (None, self.state.clone())
         }
     }
-    pub fn trigger(&mut self, url: &str, name: &'a str, method: RestMethod, ctx: Context) {
+    pub fn trigger(&mut self, url: &str, name: &'a str, method: RestMethod, ctx: Option<Context>) {
         let req = match method {
             RestMethod::GET => ehttp::Request::get(url),
             RestMethod::POST(body) => ehttp::Request::post(url, body),
@@ -141,7 +146,9 @@ impl<'a> RestRequest<'a> {
                 Ok(_) => {}
                 Err(e) => println!("{e}"),
             };
-            ctx.request_repaint();
+            if let Some(ctx) = ctx {
+                ctx.request_repaint();
+            }
         });
         self.state = RestRequestState::InProgress(name);
     }
@@ -382,13 +389,30 @@ impl<'a> BalanceApp<'a> {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         // Load previous app state (if any).
         // Note that you must enable the `persistence` feature for this to work.
-        if let Some(storage) = cc.storage {
-            return eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
-        }
-        // This is also where you can customize the look and feel of egui using
-        // `cc.egui_ctx.set_visuals` and `cc.egui_ctx.set_fonts`.
+        let app: Self = if let Some(storage) = cc.storage {
+            eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default()
+        } else {
+            // This is also where you can customize the look and feel of egui using
+            // `cc.egui_ctx.set_visuals` and `cc.egui_ctx.set_fonts`.
 
-        Default::default()
+            Default::default()
+        };
+        #[cfg(target_arch = "wasm32")]
+        {
+            let mut app = app;
+            app.get_session_fromurl();
+            app
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        app
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn get_session_fromurl(&mut self) {
+        let link_with_sessionid = get_current_url();
+        if sessionid_from_link(&link_with_sessionid).is_some() {
+            self.trigger_load(&link_with_sessionid, None);
+        }
     }
 
     fn check_csv_download(&mut self) {
@@ -425,7 +449,7 @@ impl<'a> BalanceApp<'a> {
         let json_data = format!("{{\"json_data\": {} }}", self_json_string);
         let method = RestMethod::POST(json_data.into_bytes());
         self.sharelink_request
-            .trigger(url, name, method, ctx.clone());
+            .trigger(url, name, method, Some(ctx.clone()));
     }
     fn check_sharelink(&mut self, ui: &mut Ui) {
         let (status, state) = self.sharelink_request.check();
@@ -470,11 +494,11 @@ impl<'a> BalanceApp<'a> {
         }
     }
 
-    pub fn trigger_load(&mut self, link_with_sessionid: &str, ctx: &Context) -> () {
+    pub fn trigger_load(&mut self, link_with_sessionid: &str, ctx: Option<&Context>) -> () {
         if let Some(session_id) = sessionid_from_link(link_with_sessionid) {
             let url = format!("{URL_READ_SHARELINK}?session_id={session_id}");
             self.load_request
-                .trigger(url.as_str(), "load", RestMethod::GET, ctx.clone())
+                .trigger(url.as_str(), "load", RestMethod::GET, ctx.cloned())
         } else {
             self.status_msg = Some(format!(
                 "invalid link with session id {link_with_sessionid}"
@@ -605,34 +629,35 @@ impl<'a> eframe::App for BalanceApp<'a> {
     }
     /// Called each time the UI needs repainting, which may be many times per second.
     /// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
-    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.check_csv_download();
         self.check_load();
 
         #[cfg(not(target_arch = "wasm32"))] // no File->Quit on web pages!
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
-            self.check_sharelink(ui);
             // The top panel is often a good place for a menu bar:
             egui::menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
                     if ui.button("Quit").clicked() {
-                        frame.close();
+                        _frame.close();
                     }
                 });
             });
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
+            self.check_sharelink(ui);
             egui::ScrollArea::new([true, true]).show(ui, |ui| {
                 heading(ui, "Balance");
                 egui::CollapsingHeader::new("Share").show(ui, |ui| {
-                    if ui.button("sharelink to clipboard").clicked() {
+                    if ui.button("copy link to clipboard").clicked() {
                         self.trigger_sharelink(ctx);
                     }
+                    #[cfg(not(target_arch = "wasm32"))]
                     ui.horizontal(|ui| {
                         ui.text_edit_singleline(&mut self.session_id_to_be_loaded);
-                        if ui.button("load session").clicked() {
-                            self.trigger_load(&self.session_id_to_be_loaded.clone(), &ctx);
+                        if ui.button("load session from link").clicked() {
+                            self.trigger_load(&self.session_id_to_be_loaded.clone(), None);
                         }
                     });
                 });
@@ -744,7 +769,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                                 &url,
                                 name,
                                 RestMethod::GET,
-                                ctx.clone(),
+                                Some(ctx.clone()),
                             );
                             self.charts.plot_balance = false;
                             self.rebalance_stats = None;
