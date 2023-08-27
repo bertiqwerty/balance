@@ -2,7 +2,28 @@ use crate::{
     core_types::{to_blc, BlcResult},
     date::Date,
 };
+use serde::{Deserialize, Serialize};
 use std::str::FromStr;
+pub const URL_WRITE_SHARELINK: &str = "https://bertiqwerty.com/balance_storage/write.php";
+pub const URL_READ_SHARELINK: &str = "https://bertiqwerty.com/balance_storage/read.php";
+
+pub fn sessionid_to_link(session_id: &str) -> String {
+    format!("https://bertiqwerty.com/index.html?session_id={session_id}")
+}
+
+pub fn sessionid_from_link(link: &str) -> Option<String> {
+    link.split('?')
+        .last()
+        .and_then(|s| s.split("session_id=").last())
+        .map(|s| s.chars().take_while(|c| c.is_alphanumeric()).collect::<String>())
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct ResponsePayload<T> {
+    pub status: u16,
+    pub message: String,
+    pub json_data: T,
+}
 
 pub fn read_csv_from_str(csv: &str) -> BlcResult<(Vec<Date>, Vec<f64>)> {
     let reader = csv::Reader::from_reader(csv.as_bytes());

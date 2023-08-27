@@ -6,14 +6,18 @@ use crate::compute::{
 };
 use crate::core_types::{to_blc, BlcResult};
 use crate::date::{date_after_nmonths, Date, Interval};
-use crate::io::read_csv_from_str;
+use crate::io::{
+    read_csv_from_str, sessionid_from_link, sessionid_to_link, ResponsePayload, URL_READ_SHARELINK,
+    URL_WRITE_SHARELINK,
+};
 use crate::month_slider::{MonthSlider, MonthSliderPair, SliderState};
 use egui::{Context, Response, RichText, Ui};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::fmt::Display;
 use std::iter;
-use std::sync::mpsc;
 use std::sync::mpsc::Sender;
+use std::sync::mpsc::{self, Receiver};
 // use wasm_bindgen::prelude::*;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -86,11 +90,66 @@ fn remove_indices<T: Clone>(v: &mut Vec<T>, to_be_deleted: &[usize]) {
     v.truncate(target_idx);
 }
 
-#[derive(Debug)]
-enum Download<'a> {
+#[derive(Debug, Default, Clone)]
+enum RestRequestState<'a> {
+    #[default]
     None,
     InProgress(&'a str),
     Done((&'a str, ehttp::Result<ehttp::Response>)),
+}
+
+enum RestMethod {
+    GET,
+    POST(Vec<u8>),
+}
+
+struct RestRequest<'a> {
+    state: RestRequestState<'a>,
+    tx: Sender<ehttp::Result<ehttp::Response>>,
+    rx: Receiver<ehttp::Result<ehttp::Response>>,
+}
+impl<'a> RestRequest<'a> {
+    pub fn new() -> Self {
+        let (tx, rx) = mpsc::channel();
+        Self {
+            state: RestRequestState::None,
+            tx,
+            rx,
+        }
+    }
+    pub fn check(&self) -> (Option<String>, RestRequestState<'a>) {
+        if let RestRequestState::InProgress(s) = self.state {
+            match self.rx.try_recv() {
+                Ok(d) => (None, RestRequestState::Done((s, d))),
+                _ => (
+                    Some("waiting for REST call...".to_string()),
+                    self.state.clone(),
+                ),
+            }
+        } else {
+            (None, self.state.clone())
+        }
+    }
+    pub fn trigger(&mut self, url: &str, name: &'a str, method: RestMethod, ctx: Context) {
+        let req = match method {
+            RestMethod::GET => ehttp::Request::get(url),
+            RestMethod::POST(body) => ehttp::Request::post(url, body),
+        };
+        let tx = self.tx.clone();
+        ehttp::fetch(req, move |response| {
+            match tx.send(response) {
+                Ok(_) => {}
+                Err(e) => println!("{e}"),
+            };
+            ctx.request_repaint();
+        });
+        self.state = RestRequestState::InProgress(name);
+    }
+}
+impl<'a> Default for RestRequest<'a> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[derive(PartialEq, Clone, Serialize, Deserialize)]
@@ -144,17 +203,6 @@ impl Display for VolaAmount {
     }
 }
 
-fn trigger_dl(url: &str, rx: Sender<ehttp::Result<ehttp::Response>>, ctx: Context) {
-    let req = ehttp::Request::get(url);
-    ehttp::fetch(req, move |response| {
-        match rx.send(response) {
-            Ok(_) => {}
-            Err(e) => println!("{e}"),
-        };
-        ctx.request_repaint();
-    });
-}
-
 fn heading2(ui: &mut Ui, s: &str) -> Response {
     ui.heading(RichText::new(s).strong().size(18.0))
 }
@@ -172,19 +220,6 @@ struct SimInput {
     n_months: String,
 }
 impl SimInput {
-    fn new() -> Self {
-        SimInput {
-            vola: Vola::new(),
-            expected_yearly_return: "7.0".to_string(),
-            is_eyr_independent: true,
-            n_months: "360".to_string(),
-            start_month_slider: MonthSlider::new(
-                Date::new(1970, 1).unwrap(),
-                Date::new(2050, 12).unwrap(),
-                SliderState::Some(480),
-            ),
-        }
-    }
     fn parse(&self) -> BlcResult<(f64, usize, f64, bool, Date, usize)> {
         Ok((
             self.vola.amount_as_float(),
@@ -200,6 +235,21 @@ impl SimInput {
                 .ok_or_else(|| blcerr!("no date selected"))?,
             self.n_months.parse().map_err(to_blc)?,
         ))
+    }
+}
+impl Default for SimInput {
+    fn default() -> Self {
+        SimInput {
+            vola: Vola::new(),
+            expected_yearly_return: "7.0".to_string(),
+            is_eyr_independent: true,
+            n_months: "360".to_string(),
+            start_month_slider: MonthSlider::new(
+                Date::new(1970, 1).unwrap(),
+                Date::new(2050, 12).unwrap(),
+                SliderState::Some(480),
+            ),
+        }
     }
 }
 
@@ -254,15 +304,6 @@ struct PaymentData {
     rebalance_deviation: (String, Option<f64>),
 }
 impl PaymentData {
-    fn new() -> Self {
-        let initial_balance = 10000.0;
-        PaymentData {
-            initial_balance: (format!("{initial_balance:0.2}"), initial_balance),
-            monthly_payments: MonthlyPaymentState::new(),
-            rebalance_interval: ("".to_string(), None),
-            rebalance_deviation: ("".to_string(), None),
-        }
-    }
     fn parse(&mut self) -> BlcResult<()> {
         self.initial_balance.1 = self.initial_balance.0.parse().map_err(to_blc)?;
         self.monthly_payments.parse()?;
@@ -274,6 +315,17 @@ impl PaymentData {
             .ok()
             .map(|d: f64| d / 100.0);
         Ok(())
+    }
+}
+impl Default for PaymentData {
+    fn default() -> Self {
+        let initial_balance = 10000.0;
+        PaymentData {
+            initial_balance: (format!("{initial_balance:0.2}"), initial_balance),
+            monthly_payments: MonthlyPaymentState::new(),
+            rebalance_interval: ("".to_string(), None),
+            rebalance_deviation: ("".to_string(), None),
+        }
     }
 }
 
@@ -304,15 +356,17 @@ impl FinalBalance {
     }
 }
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Default)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
 pub struct BalanceApp<'a> {
     #[serde(skip)]
-    rx: mpsc::Sender<ehttp::Result<ehttp::Response>>,
+    download_historic_csv: RestRequest<'a>,
     #[serde(skip)]
-    tx: mpsc::Receiver<ehttp::Result<ehttp::Response>>,
+    sharelink_request: RestRequest<'a>,
     #[serde(skip)]
-    download: Download<'a>,
+    load_request: RestRequest<'a>,
+    #[serde(skip)]
+    session_id_to_be_loaded: String,
     status_msg: Option<String>,
     sim: SimInput,
     charts: Charts,
@@ -321,27 +375,6 @@ pub struct BalanceApp<'a> {
     rebalance_stats_summary: Option<BlcResult<RebalanceStatsSummary>>,
     best_rebalance_trigger: Option<BestRebalanceTrigger>,
     final_balance: Option<FinalBalance>,
-}
-
-impl<'a> Default for BalanceApp<'a> {
-    fn default() -> Self {
-        let (rx, tx) = mpsc::channel();
-        let charts = Charts::default();
-
-        Self {
-            rx,
-            tx,
-            download: Download::None,
-            status_msg: None,
-            sim: SimInput::new(),
-            charts,
-            payment: PaymentData::new(),
-            rebalance_stats: None,
-            rebalance_stats_summary: None,
-            best_rebalance_trigger: None,
-            final_balance: None,
-        }
-    }
 }
 
 impl<'a> BalanceApp<'a> {
@@ -358,18 +391,13 @@ impl<'a> BalanceApp<'a> {
         Default::default()
     }
 
-    fn check_download(&mut self) {
-        if let Download::InProgress(s) = self.download {
-            match self.tx.try_recv() {
-                Ok(d) => {
-                    self.download = Download::Done((s, d));
-                    self.status_msg = None;
-                }
-                _ => {
-                    self.status_msg = Some("downloading...".to_string());
-                }
-            }
-        } else if let Download::Done((name, d)) = &self.download {
+    fn check_csv_download(&mut self) {
+        let (status, state) = self.download_historic_csv.check();
+        self.download_historic_csv.state = state;
+        if let Some(status) = status {
+            self.status_msg = Some(status);
+        }
+        if let RestRequestState::Done((name, d)) = &self.download_historic_csv.state {
             let tmp = match d {
                 Ok(resp) => {
                     let (dates, values) = read_csv_from_str(resp.text().unwrap()).unwrap();
@@ -386,10 +414,106 @@ impl<'a> BalanceApp<'a> {
                 }
             };
             self.charts.add_tmp(tmp);
-            self.download = Download::None;
+            self.download_historic_csv.state = RestRequestState::None;
+            self.status_msg = None;
+        }
+    }
+    fn trigger_sharelink(&mut self, ctx: &Context) {
+        let url = URL_WRITE_SHARELINK;
+        let name = "sharelink";
+        let self_json_string = serde_json::to_string(self).unwrap();
+        let json_data = format!("{{\"json_data\": {} }}", self_json_string);
+        let method = RestMethod::POST(json_data.into_bytes());
+        self.sharelink_request
+            .trigger(url, name, method, ctx.clone());
+    }
+    fn check_sharelink(&mut self, ui: &mut Ui) {
+        let (status, state) = self.sharelink_request.check();
+        self.sharelink_request.state = state;
+        if let Some(status) = status {
+            self.status_msg = Some(status);
+        }
+        if let RestRequestState::Done((_name, d)) = &self.sharelink_request.state {
+            match d {
+                Ok(resp) => {
+                    if resp.status == 200 {
+                        self.status_msg = None;
+                        ui.output_mut(|o| {
+                            #[derive(Serialize, Deserialize)]
+                            struct WriteJsonData {
+                                pub session_id: String,
+                            }
+                            let json_str = resp.text().unwrap();
+                            let v: ResponsePayload<WriteJsonData> =
+                                serde_json::from_str(json_str).unwrap();
+                            let session_id = v.json_data.session_id;
+                            o.copied_text = sessionid_to_link(&session_id);
+                        });
+                        self.sharelink_request.state = RestRequestState::None;
+                    } else {
+                        let json_str = resp.text().unwrap();
+                        let v: Value = serde_json::from_str(json_str).unwrap();
+                        let status = format!(
+                            "status {}, {}, {}",
+                            resp.status,
+                            &v["message"].to_string(),
+                            resp.status_text.clone()
+                        );
+                        self.status_msg = Some(status);
+                    }
+                }
+                Err(e) => {
+                    let status = e.to_string();
+                    self.status_msg = Some(status);
+                }
+            };
         }
     }
 
+    pub fn trigger_load(&mut self, link_with_sessionid: &str, ctx: &Context) -> () {
+        if let Some(session_id) = sessionid_from_link(link_with_sessionid) {
+            let url = format!("{URL_READ_SHARELINK}?session_id={session_id}");
+            self.load_request
+                .trigger(url.as_str(), "load", RestMethod::GET, ctx.clone())
+        } else {
+            self.status_msg = Some(format!(
+                "invalid link with session id {link_with_sessionid}"
+            ));
+        }
+    }
+    pub fn check_load(&mut self) {
+        let (status, state) = self.load_request.check();
+        self.load_request.state = state;
+        if let Some(status) = status {
+            self.status_msg = Some(status);
+        }
+        if let RestRequestState::Done((_name, d)) = &self.load_request.state {
+            match d {
+                Ok(resp) => {
+                    if resp.status == 200 {
+                        let json_str = resp.text().unwrap();
+                        let v: ResponsePayload<Self> = serde_json::from_str(json_str).unwrap();
+                        let new_balance = v.json_data;
+                        *self = new_balance;
+                    } else {
+                        let json_str = resp.text().unwrap();
+                        let v: Value = serde_json::from_str(json_str).unwrap();
+                        let status = format!(
+                            "status {}, {}, {}",
+                            resp.status,
+                            &v["message"].to_string(),
+                            resp.status_text.clone()
+                        );
+                        self.status_msg = Some(status);
+                    }
+                }
+                Err(e) => {
+                    let status = e.to_string();
+                    self.status_msg = Some(status);
+                }
+            };
+        }
+    }
     fn recompute_balance(&mut self) {
         if let Err(e) = self.payment.parse() {
             self.status_msg = Some(format!("{e}"));
@@ -482,10 +606,12 @@ impl<'a> eframe::App for BalanceApp<'a> {
     /// Called each time the UI needs repainting, which may be many times per second.
     /// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
-        self.check_download();
+        self.check_csv_download();
+        self.check_load();
 
         #[cfg(not(target_arch = "wasm32"))] // no File->Quit on web pages!
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
+            self.check_sharelink(ui);
             // The top panel is often a good place for a menu bar:
             egui::menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
@@ -499,16 +625,17 @@ impl<'a> eframe::App for BalanceApp<'a> {
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::ScrollArea::new([true, true]).show(ui, |ui| {
                 heading(ui, "Balance");
-                if ui.button("share").clicked() {
-                    let json = serde_json::to_string(&self).unwrap();
-
-                    #[cfg(not(target_arch = "wasm32"))]
-                    {
-                        let tmp_filename = "tmp.json";
-                        let mut tmp_file = File::create(tmp_filename).map_err(to_blc).unwrap();
-                        write!(tmp_file, "{json}").map_err(to_blc).unwrap();
+                egui::CollapsingHeader::new("Share").show(ui, |ui| {
+                    if ui.button("sharelink to clipboard").clicked() {
+                        self.trigger_sharelink(ctx);
                     }
-                }
+                    ui.horizontal(|ui| {
+                        ui.text_edit_singleline(&mut self.session_id_to_be_loaded);
+                        if ui.button("load session").clicked() {
+                            self.trigger_load(&self.session_id_to_be_loaded.clone(), &ctx);
+                        }
+                    });
+                });
                 heading2(ui, "1. Add Charts");
                 egui::CollapsingHeader::new("Simulate").show(ui, |ui| {
                     egui::Grid::new("simulate-inputs")
@@ -613,8 +740,12 @@ impl<'a> eframe::App for BalanceApp<'a> {
                     let mut dl_button = |name, filename| {
                         if ui.button(name).clicked() {
                             let url = format!("{BASE_URL_WWW}/{filename}");
-                            trigger_dl(&url, self.rx.clone(), ctx.clone());
-                            self.download = Download::InProgress(name);
+                            self.download_historic_csv.trigger(
+                                &url,
+                                name,
+                                RestMethod::GET,
+                                ctx.clone(),
+                            );
                             self.charts.plot_balance = false;
                             self.rebalance_stats = None;
                         }
