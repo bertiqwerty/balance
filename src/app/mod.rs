@@ -396,11 +396,13 @@ impl<'a> eframe::App for BalanceApp<'a> {
             egui::ScrollArea::new([true, true]).show(ui, |ui| {
                 heading(ui, "Balance");
                 ui.separator();
-                let make_text = |txt|egui::RichText::new(txt).code().strong();
+                let make_text = |txt| egui::RichText::new(txt).code().strong();
                 if let Some(status_msg) = &self.status_msg {
                     ui.label(make_text(status_msg.as_str()));
                 } else if self.charts.persisted.is_empty() {
-                    ui.label(make_text("Add simulated or historical charts to compute balances"));
+                    ui.label(make_text(
+                        "Add simulated or historical charts to compute balances",
+                    ));
                 } else {
                     ui.label(make_text("Balance computation ready"));
                 }
