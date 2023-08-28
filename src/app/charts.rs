@@ -6,8 +6,9 @@ use crate::{
     },
     core_types::BlcResult,
     date::{fill_between, Date, Interval},
-    month_slider::{MonthSlider, MonthSliderPair, SliderState},
 };
+
+use super::month_slider::{MonthSlider, MonthSliderPair, SliderState};
 use egui::{
     plot::{Corner, Legend, Line},
     Ui,

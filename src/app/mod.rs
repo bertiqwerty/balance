@@ -1,26 +1,29 @@
-use crate::blcerr;
-use crate::charts::{Chart, Charts, MonthlyPayments, TmpChart};
 use crate::compute::{
     random_walk, yearly_return, BestRebalanceTrigger, RebalanceStats, RebalanceStatsSummary,
     RebalanceTrigger,
 };
 use crate::core_types::{to_blc, BlcResult};
-use crate::date::{date_after_nmonths, Date, Interval};
+use crate::date::date_after_nmonths;
 use crate::io::{
     read_csv_from_str, sessionid_from_link, sessionid_to_link, ResponsePayload, URL_READ_SHARELINK,
     URL_WRITE_SHARELINK,
 };
-use crate::month_slider::{MonthSlider, MonthSliderPair, SliderState};
+use charts::{Chart, Charts, TmpChart};
 use egui::{Context, Response, RichText, Ui};
+use month_slider::{MonthSlider, MonthSliderPair, SliderState};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::fmt::Display;
 use std::iter;
-use std::sync::mpsc::Sender;
-use std::sync::mpsc::{self, Receiver};
+mod charts;
+mod month_slider;
+mod ui_state_types;
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::{fs::File, io::Write};
+
+use self::ui_state_types::{
+    FinalBalance, PaymentData, RestMethod, RestRequest, RestRequestState, SimInput, VolaAmount,
+};
 
 #[cfg(target_arch = "wasm32")]
 use {
@@ -95,125 +98,6 @@ fn remove_indices<T: Clone>(v: &mut Vec<T>, to_be_deleted: &[usize]) {
     v.truncate(target_idx);
 }
 
-#[derive(Debug, Default, Clone)]
-enum RestRequestState<'a> {
-    #[default]
-    None,
-    InProgress(&'a str),
-    Done((&'a str, ehttp::Result<ehttp::Response>)),
-}
-
-enum RestMethod {
-    Get,
-    Post(Vec<u8>),
-}
-
-struct RestRequest<'a> {
-    state: RestRequestState<'a>,
-    tx: Sender<ehttp::Result<ehttp::Response>>,
-    rx: Receiver<ehttp::Result<ehttp::Response>>,
-}
-impl<'a> RestRequest<'a> {
-    pub fn new() -> Self {
-        let (tx, rx) = mpsc::channel();
-        Self {
-            state: RestRequestState::None,
-            tx,
-            rx,
-        }
-    }
-    pub fn check(&self) -> (Option<String>, RestRequestState<'a>) {
-        if let RestRequestState::InProgress(s) = self.state {
-            match self.rx.try_recv() {
-                Ok(d) => (None, RestRequestState::Done((s, d))),
-                _ => (
-                    Some("waiting for REST call...".to_string()),
-                    self.state.clone(),
-                ),
-            }
-        } else {
-            (None, self.state.clone())
-        }
-    }
-    pub fn trigger(&mut self, url: &str, name: &'a str, method: RestMethod, ctx: Option<Context>) {
-        let req = match method {
-            RestMethod::Get => ehttp::Request::get(url),
-            RestMethod::Post(body) => ehttp::Request::post(url, body),
-        };
-        let tx = self.tx.clone();
-        ehttp::fetch(req, move |response| {
-            match tx.send(response) {
-                Ok(_) => {}
-                Err(e) => println!("{e}"),
-            };
-            if let Some(ctx) = ctx {
-                ctx.request_repaint();
-            }
-        });
-        self.state = RestRequestState::InProgress(name);
-    }
-}
-impl<'a> Default for RestRequest<'a> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[derive(PartialEq, Clone, Serialize, Deserialize)]
-struct Vola {
-    amount: VolaAmount,
-    smoothing: bool,
-    smoothing_window: usize,
-}
-impl Vola {
-    fn amount_as_float(&self) -> f64 {
-        self.amount.to_float()
-    }
-    fn new() -> Self {
-        Vola {
-            amount: VolaAmount::Mi,
-            smoothing: true,
-            smoothing_window: 12,
-        }
-    }
-}
-impl Display for Vola {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&format!(
-            "{}-vola-{}",
-            self.amount,
-            if self.smoothing { "varies" } else { "global" }
-        ))
-    }
-}
-#[derive(PartialEq, Clone, Serialize, Deserialize)]
-enum VolaAmount {
-    No,
-    Lo,
-    Mi,
-    Hi,
-}
-impl VolaAmount {
-    fn to_float(&self) -> f64 {
-        match self {
-            VolaAmount::No => 0.0,
-            VolaAmount::Lo => 0.005,
-            VolaAmount::Mi => 0.01,
-            VolaAmount::Hi => 0.02,
-        }
-    }
-}
-impl Display for VolaAmount {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            VolaAmount::No => f.write_str("no"),
-            VolaAmount::Lo => f.write_str("low"),
-            VolaAmount::Mi => f.write_str("mid"),
-            VolaAmount::Hi => f.write_str("high"),
-        }
-    }
-}
-
 fn heading2(ui: &mut Ui, s: &str) -> Response {
     ui.heading(RichText::new(s).strong().size(18.0))
 }
@@ -222,152 +106,6 @@ fn heading(ui: &mut Ui, s: &str) -> Response {
     ui.heading(RichText::new(s).strong().size(30.0))
 }
 
-#[derive(Serialize, Deserialize)]
-struct SimInput {
-    vola: Vola,
-    expected_yearly_return: String,
-    is_eyr_markovian: bool,
-    start_month_slider: MonthSlider,
-    n_months: String,
-    name: String,
-}
-impl SimInput {
-    fn parse(&self) -> BlcResult<(f64, usize, f64, bool, Date, usize)> {
-        Ok((
-            self.vola.amount_as_float(),
-            if self.vola.smoothing {
-                self.vola.smoothing_window
-            } else {
-                1
-            },
-            self.expected_yearly_return.parse().map_err(to_blc)?,
-            self.is_eyr_markovian,
-            self.start_month_slider
-                .selected_date()
-                .ok_or_else(|| blcerr!("no date selected"))?,
-            self.n_months.parse().map_err(to_blc)?,
-        ))
-    }
-}
-impl Default for SimInput {
-    fn default() -> Self {
-        SimInput {
-            vola: Vola::new(),
-            expected_yearly_return: "7.0".to_string(),
-            is_eyr_markovian: true,
-            n_months: "360".to_string(),
-            start_month_slider: MonthSlider::new(
-                Date::new(1970, 1).unwrap(),
-                Date::new(2050, 12).unwrap(),
-                SliderState::Some(480),
-            ),
-            name: "".to_string(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct MonthlyPaymentState {
-    payments: MonthlyPayments,
-    pay_fields: Vec<String>,
-    sliders: Vec<MonthSliderPair>,
-}
-impl MonthlyPaymentState {
-    fn new() -> Self {
-        let payment = 0.0;
-        let payment_str = format!("{payment:0.2}");
-        Self {
-            payments: MonthlyPayments::from_single_payment(payment),
-            pay_fields: vec![payment_str],
-            sliders: vec![],
-        }
-    }
-    fn parse(&mut self) -> BlcResult<()> {
-        let payments = self
-            .pay_fields
-            .iter()
-            .map(|ps| ps.parse::<f64>().map_err(to_blc))
-            .collect::<BlcResult<Vec<f64>>>()?;
-        let ok_or_date =
-            |d: Option<Date>| d.ok_or_else(|| blcerr!("no date selected for monthly payment"));
-        let intervals = self
-            .sliders
-            .iter()
-            .map(|slider_pair| {
-                Interval::new(
-                    ok_or_date(slider_pair.selected_start_date())?,
-                    ok_or_date(slider_pair.selected_end_date())?,
-                )
-            })
-            .collect::<BlcResult<Vec<Interval>>>()?;
-        self.payments = if intervals.is_empty() && payments.len() == 1 {
-            MonthlyPayments::from_single_payment(payments[0])
-        } else {
-            MonthlyPayments::from_intervals(payments, intervals)?
-        };
-        Ok(())
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct PaymentData {
-    initial_balance: (String, f64),
-    monthly_payments: MonthlyPaymentState,
-    rebalance_interval: (String, Option<usize>),
-    rebalance_deviation: (String, Option<f64>),
-}
-impl PaymentData {
-    fn parse(&mut self) -> BlcResult<()> {
-        self.initial_balance.1 = self.initial_balance.0.parse().map_err(to_blc)?;
-        self.monthly_payments.parse()?;
-        self.rebalance_interval.1 = self.rebalance_interval.0.parse().ok();
-        self.rebalance_deviation.1 = self
-            .rebalance_deviation
-            .0
-            .parse()
-            .ok()
-            .map(|d: f64| d / 100.0);
-        Ok(())
-    }
-}
-impl Default for PaymentData {
-    fn default() -> Self {
-        let initial_balance = 10000.0;
-        PaymentData {
-            initial_balance: (format!("{initial_balance:0.2}"), initial_balance),
-            monthly_payments: MonthlyPaymentState::new(),
-            rebalance_interval: ("".to_string(), None),
-            rebalance_deviation: ("".to_string(), None),
-        }
-    }
-}
-
-#[derive(Deserialize, Serialize)]
-struct FinalBalance {
-    final_balance: f64,
-    yearly_return_perc: f64,
-    total_yield: f64,
-}
-impl FinalBalance {
-    fn from_chart(
-        chart: &Chart,
-        initial_payment: f64,
-        monthly_payments: &MonthlyPayments,
-        n_months: usize,
-    ) -> BlcResult<Self> {
-        if let Some(final_balance) = chart.values().iter().last().copied() {
-            let (yearly_return_perc, total_yield) =
-                yearly_return(initial_payment, monthly_payments, n_months, final_balance);
-            Ok(FinalBalance {
-                final_balance,
-                yearly_return_perc,
-                total_yield,
-            })
-        } else {
-            Err(blcerr!("cannot compute final balance from empty chart"))
-        }
-    }
-}
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[derive(Deserialize, Serialize, Default)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
@@ -769,32 +507,35 @@ impl<'a> eframe::App for BalanceApp<'a> {
                         }
                     });
                 });
-                egui::CollapsingHeader::new("Use historical data as price development").show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        let mut dl_button = |name, filename| {
-                            if ui.button(name).clicked() {
-                                let url = format!("{BASE_URL_WWW}/{filename}");
-                                self.download_historic_csv.trigger(
-                                    &url,
-                                    name,
-                                    RestMethod::Get,
-                                    Some(ctx.clone()),
-                                );
-                                self.charts.plot_balance = false;
-                                self.rebalance_stats = None;
-                            }
-                        };
-                        dl_button("MSCI ACWI", "msciacwi.csv");
-                        dl_button("MSCI World", "msciworld.csv");
-                        dl_button("MSCI EM", "msciem.csv");
-                        dl_button("MSCI Europe", "mscieurope.csv");
-                        dl_button("S&P 500", "sandp500.csv");
-                    });
-                    ui.horizontal(|ui| {
-                        ui.label("data from");
-                        ui.hyperlink("https://curvo.eu/backtest/")
-                    });
-                });
+                egui::CollapsingHeader::new("Use historical data as price development").show(
+                    ui,
+                    |ui| {
+                        ui.horizontal(|ui| {
+                            let mut dl_button = |name, filename| {
+                                if ui.button(name).clicked() {
+                                    let url = format!("{BASE_URL_WWW}/{filename}");
+                                    self.download_historic_csv.trigger(
+                                        &url,
+                                        name,
+                                        RestMethod::Get,
+                                        Some(ctx.clone()),
+                                    );
+                                    self.charts.plot_balance = false;
+                                    self.rebalance_stats = None;
+                                }
+                            };
+                            dl_button("MSCI ACWI", "msciacwi.csv");
+                            dl_button("MSCI World", "msciworld.csv");
+                            dl_button("MSCI EM", "msciem.csv");
+                            dl_button("MSCI Europe", "mscieurope.csv");
+                            dl_button("S&P 500", "sandp500.csv");
+                        });
+                        ui.horizontal(|ui| {
+                            ui.label("data from");
+                            ui.hyperlink("https://curvo.eu/backtest/")
+                        });
+                    },
+                );
 
                 if ui
                     .button("Add price development for balance computation")
@@ -1050,7 +791,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                             if let Ok(n_months) = self.charts.n_months_persisted() {
                                 let (yearly_return_perc, _) = yearly_return(
                                     initial_payment,
-                                    &monthly_payments,
+                                    monthly_payments.sum_payments_total(n_months, |x| x),
                                     n_months,
                                     balance,
                                 );
