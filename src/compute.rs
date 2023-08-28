@@ -445,8 +445,8 @@ fn compute_total_balance(
 
 #[test]
 fn test_adapt() {
-    let price_dev = vec![3.0, 6.0, 12.0, 6.0];
-    let price_ref = vec![10.0, 20.0, 40.0, 20.0];
+    let price_dev = [3.0, 6.0, 12.0, 6.0];
+    let price_ref = [10.0, 20.0, 40.0, 20.0];
     let adapted = adapt_pricedev_to_initial_balance(10.0, &price_dev);
     for (a, p) in adapted.zip(price_ref.iter()) {
         assert!((a - p) < 1e-12);
@@ -647,8 +647,8 @@ fn test_rebalancestats() {
     )
     .unwrap();
     assert!(stats.records.len() == min_n_months + 1);
-    let ref_means_wo = vec![0.9375, 0.9166666666666666, 0.875, 1.0];
-    let ref_means_w = vec![0.96875, 0.9583333333333334, 0.9375, 1.125];
+    let ref_means_wo = [0.9375, 0.9166666666666666, 0.875, 1.0];
+    let ref_means_w = [0.96875, 0.9583333333333334, 0.9375, 1.125];
     for (i, r) in stats.records.iter().enumerate() {
         let n_months = i + min_n_months;
         assert_eq!(r.n_months, n_months);
