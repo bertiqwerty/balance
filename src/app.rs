@@ -704,7 +704,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                                 ui.label("Return independent of previous returns");
                                 ui.checkbox(&mut self.sim.is_eyr_markovian, "");
                                 ui.end_row();
-                                ui.label("Times of different volatility");
+                                ui.label("Times of similar volatility");
                                 ui.checkbox(&mut self.sim.vola.smoothing, "");
                             });
                     });
