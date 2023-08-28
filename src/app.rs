@@ -1148,10 +1148,11 @@ impl<'a> eframe::App for BalanceApp<'a> {
                         export_csv(&self.charts).unwrap();
                     }
                 });
-                if ui.button("Reset").clicked() {
-                    *self = Self::default();
-                }
                 ui.horizontal(|ui| {
+                    if ui.button("Reset").clicked() {
+                        *self = Self::default();
+                    }
+                    ui.label("-");
                     ui.label("Code on");
                     ui.hyperlink_to("Github", "https://github.com/bertiqwerty/balance");
                     ui.label("-");
