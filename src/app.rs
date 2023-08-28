@@ -777,7 +777,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                 });
 
                 if ui
-                    .button("Persist price development for balance computation")
+                    .button("Add price development for balance computation")
                     .clicked()
                 {
                     self.best_rebalance_trigger = None;
