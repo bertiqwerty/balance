@@ -662,13 +662,13 @@ impl<'a> eframe::App for BalanceApp<'a> {
                     egui::Grid::new("simulate-inputs")
                         .num_columns(2)
                         .show(ui, |ui| {
-                            ui.label("expected yearly return [%]");
+                            ui.label("Expected yearly return [%]");
                             ui.text_edit_singleline(&mut self.sim.expected_yearly_return);
                             ui.end_row();
-                            ui.label("#months");
+                            ui.label("#Months");
                             ui.text_edit_singleline(&mut self.sim.n_months);
                             ui.end_row();
-                            ui.label("start date");
+                            ui.label("Start date");
                             self.sim.start_month_slider.month_slider(ui);
                         });
                     ui.horizontal(|ui| {
