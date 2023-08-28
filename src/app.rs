@@ -658,7 +658,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
             egui::ScrollArea::new([true, true]).show(ui, |ui| {
                 heading(ui, "Balance");
                 heading2(ui, "1. Add Price Development(s)");
-                egui::CollapsingHeader::new("Simulate").show(ui, |ui| {
+                egui::CollapsingHeader::new("Simulate price development").show(ui, |ui| {
                     egui::Grid::new("simulate-inputs")
                         .num_columns(2)
                         .show(ui, |ui| {
@@ -769,7 +769,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                         }
                     });
                 });
-                egui::CollapsingHeader::new("Historical Index Data").show(ui, |ui| {
+                egui::CollapsingHeader::new("Use historical data as price development").show(ui, |ui| {
                     ui.horizontal(|ui| {
                         let mut dl_button = |name, filename| {
                             if ui.button(name).clicked() {
