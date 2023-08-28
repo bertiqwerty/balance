@@ -179,7 +179,11 @@ impl Vola {
 }
 impl Display for Vola {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&format!("{}_{}", self.amount, self.smoothing))
+        f.write_str(&format!(
+            "{}-vola-{}",
+            self.amount,
+            if self.smoothing { "varies" } else { "global" }
+        ))
     }
 }
 #[derive(PartialEq, Clone, Serialize, Deserialize)]
@@ -222,9 +226,10 @@ fn heading(ui: &mut Ui, s: &str) -> Response {
 struct SimInput {
     vola: Vola,
     expected_yearly_return: String,
-    is_eyr_independent: bool,
+    is_eyr_markovian: bool,
     start_month_slider: MonthSlider,
     n_months: String,
+    name: String,
 }
 impl SimInput {
     fn parse(&self) -> BlcResult<(f64, usize, f64, bool, Date, usize)> {
@@ -236,7 +241,7 @@ impl SimInput {
                 1
             },
             self.expected_yearly_return.parse().map_err(to_blc)?,
-            self.is_eyr_independent,
+            self.is_eyr_markovian,
             self.start_month_slider
                 .selected_date()
                 .ok_or_else(|| blcerr!("no date selected"))?,
@@ -249,13 +254,14 @@ impl Default for SimInput {
         SimInput {
             vola: Vola::new(),
             expected_yearly_return: "7.0".to_string(),
-            is_eyr_independent: true,
+            is_eyr_markovian: true,
             n_months: "360".to_string(),
             start_month_slider: MonthSlider::new(
                 Date::new(1970, 1).unwrap(),
                 Date::new(2050, 12).unwrap(),
                 SliderState::Some(480),
             ),
+            name: "".to_string(),
         }
     }
 }
@@ -669,10 +675,13 @@ impl<'a> eframe::App for BalanceApp<'a> {
                         egui::Grid::new("simulate-advanced")
                             .num_columns(2)
                             .show(ui, |ui| {
-                                ui.label("Return independent of previous returns");
-                                ui.checkbox(&mut self.sim.is_eyr_independent, "");
+                                ui.label("Name (auto-generated if empty)");
+                                ui.text_edit_singleline(&mut self.sim.name);
                                 ui.end_row();
-                                ui.label("Volatility smoothing");
+                                ui.label("Return independent of previous returns");
+                                ui.checkbox(&mut self.sim.is_eyr_markovian, "");
+                                ui.end_row();
+                                ui.label("Times of different volatility");
                                 ui.checkbox(&mut self.sim.vola.smoothing, "");
                             });
                         ui.horizontal(|ui| {
@@ -700,7 +709,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                         });
                     });
                     ui.horizontal(|ui| {
-                        if ui.button("Simulate").clicked() {
+                        if ui.button("Run simulation").clicked() {
                             self.rebalance_stats = None;
                             match self.sim.parse() {
                                 Ok(data) => {
@@ -721,12 +730,21 @@ impl<'a> eframe::App for BalanceApp<'a> {
                                     ) {
                                         Ok(values) => {
                                             let chart = Chart::new(
-                                                format!(
-                                                    "{}_{}_{}",
-                                                    self.sim.expected_yearly_return,
-                                                    self.sim.n_months,
-                                                    self.sim.vola
-                                                ),
+                                                if self.sim.name.is_empty() {
+                                                    format!(
+                                                        "{}_{}_{}_{}",
+                                                        self.sim.expected_yearly_return,
+                                                        self.sim.n_months,
+                                                        self.sim.vola,
+                                                        if self.sim.is_eyr_markovian {
+                                                            "mrkv"
+                                                        } else {
+                                                            "non-mrkv"
+                                                        }
+                                                    )
+                                                } else {
+                                                    self.sim.name.clone()
+                                                },
                                                 (0..(n_months + 1))
                                                     .map(|i| date_after_nmonths(start_date, i))
                                                     .collect::<Vec<_>>(),
