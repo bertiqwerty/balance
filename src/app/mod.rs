@@ -395,6 +395,16 @@ impl<'a> eframe::App for BalanceApp<'a> {
             self.check_sharelink(ui);
             egui::ScrollArea::new([true, true]).show(ui, |ui| {
                 heading(ui, "Balance");
+                ui.separator();
+                let make_text = |txt|egui::RichText::new(txt).code().strong();
+                if let Some(status_msg) = &self.status_msg {
+                    ui.label(make_text(status_msg.as_str()));
+                } else if self.charts.persisted.is_empty() {
+                    ui.label(make_text("Add simulated or historical charts to compute balances"));
+                } else {
+                    ui.label(make_text("Balance computation ready"));
+                }
+                ui.separator();
                 heading2(ui, "1. Add Price Development(s)");
                 egui::CollapsingHeader::new("Simulate price development").show(ui, |ui| {
                     egui::Grid::new("simulate-inputs")
@@ -684,7 +694,6 @@ impl<'a> eframe::App for BalanceApp<'a> {
                 }
                 ui.separator();
                 heading2(ui, "3. Investigate Results of Balance Computation");
-
                 egui::Grid::new("balance-number-results").show(ui, |ui| {
                     if let Some(final_balance) = &self.final_balance {
                         let FinalBalance {
@@ -765,15 +774,6 @@ impl<'a> eframe::App for BalanceApp<'a> {
                         };
                     }
                 });
-                ui.separator();
-                if let Some(status_msg) = &self.status_msg {
-                    ui.label(status_msg);
-                } else if self.charts.persisted.is_empty() {
-                    ui.label("Add simulated or historical charts to compute balances");
-                } else {
-                    ui.label("Balance computation ready");
-                }
-                ui.separator();
                 if let Some(best_trigger) = &self.best_rebalance_trigger {
                     egui::Grid::new("best-balance").show(ui, |ui| {
                         ui.label("(best) balance");
