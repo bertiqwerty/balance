@@ -671,29 +671,29 @@ impl<'a> eframe::App for BalanceApp<'a> {
                             ui.label("start date");
                             self.sim.start_month_slider.month_slider(ui);
                         });
-                        ui.horizontal(|ui| {
-                            ui.label("Vola");
-                            ui.radio_value(
-                                &mut self.sim.vola.amount,
-                                VolaAmount::No,
-                                format!("{}", VolaAmount::No),
-                            );
-                            ui.radio_value(
-                                &mut self.sim.vola.amount,
-                                VolaAmount::Lo,
-                                format!("{}", VolaAmount::Lo),
-                            );
-                            ui.radio_value(
-                                &mut self.sim.vola.amount,
-                                VolaAmount::Mi,
-                                format!("{}", VolaAmount::Mi),
-                            );
-                            ui.radio_value(
-                                &mut self.sim.vola.amount,
-                                VolaAmount::Hi,
-                                format!("{}", VolaAmount::Hi),
-                            );
-                        });
+                    ui.horizontal(|ui| {
+                        ui.label("Vola");
+                        ui.radio_value(
+                            &mut self.sim.vola.amount,
+                            VolaAmount::No,
+                            format!("{}", VolaAmount::No),
+                        );
+                        ui.radio_value(
+                            &mut self.sim.vola.amount,
+                            VolaAmount::Lo,
+                            format!("{}", VolaAmount::Lo),
+                        );
+                        ui.radio_value(
+                            &mut self.sim.vola.amount,
+                            VolaAmount::Mi,
+                            format!("{}", VolaAmount::Mi),
+                        );
+                        ui.radio_value(
+                            &mut self.sim.vola.amount,
+                            VolaAmount::Hi,
+                            format!("{}", VolaAmount::Hi),
+                        );
+                    });
                     egui::CollapsingHeader::new("Advanced").show(ui, |ui| {
                         egui::Grid::new("simulate-advanced")
                             .num_columns(2)
