@@ -770,24 +770,26 @@ impl<'a> eframe::App for BalanceApp<'a> {
                     });
                 });
                 egui::CollapsingHeader::new("Historical Index Data").show(ui, |ui| {
-                    let mut dl_button = |name, filename| {
-                        if ui.button(name).clicked() {
-                            let url = format!("{BASE_URL_WWW}/{filename}");
-                            self.download_historic_csv.trigger(
-                                &url,
-                                name,
-                                RestMethod::Get,
-                                Some(ctx.clone()),
-                            );
-                            self.charts.plot_balance = false;
-                            self.rebalance_stats = None;
-                        }
-                    };
-                    dl_button("MSCI ACWI", "msciacwi.csv");
-                    dl_button("MSCI World", "msciworld.csv");
-                    dl_button("MSCI EM", "msciem.csv");
-                    dl_button("MSCI Europe", "mscieurope.csv");
-                    dl_button("S&P 500", "sandp500.csv");
+                    ui.horizontal(|ui| {
+                        let mut dl_button = |name, filename| {
+                            if ui.button(name).clicked() {
+                                let url = format!("{BASE_URL_WWW}/{filename}");
+                                self.download_historic_csv.trigger(
+                                    &url,
+                                    name,
+                                    RestMethod::Get,
+                                    Some(ctx.clone()),
+                                );
+                                self.charts.plot_balance = false;
+                                self.rebalance_stats = None;
+                            }
+                        };
+                        dl_button("MSCI ACWI", "msciacwi.csv");
+                        dl_button("MSCI World", "msciworld.csv");
+                        dl_button("MSCI EM", "msciem.csv");
+                        dl_button("MSCI Europe", "mscieurope.csv");
+                        dl_button("S&P 500", "sandp500.csv");
+                    });
                     ui.horizontal(|ui| {
                         ui.label("data from");
                         ui.hyperlink("https://curvo.eu/backtest/")
