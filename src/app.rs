@@ -394,8 +394,7 @@ impl<'a> BalanceApp<'a> {
         } else {
             // This is also where you can customize the look and feel of egui using
             // `cc.egui_ctx.set_visuals` and `cc.egui_ctx.set_fonts`.
-
-            Default::default()
+            Self::default()
         };
         #[cfg(target_arch = "wasm32")]
         {
@@ -638,6 +637,9 @@ impl<'a> eframe::App for BalanceApp<'a> {
             // The top panel is often a good place for a menu bar:
             egui::menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
+                    if ui.button("Reset").clicked() {
+                        *self = Self::default();
+                    }
                     if ui.button("Quit").clicked() {
                         _frame.close();
                     }
@@ -649,19 +651,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
             self.check_sharelink(ui);
             egui::ScrollArea::new([true, true]).show(ui, |ui| {
                 heading(ui, "Balance");
-                egui::CollapsingHeader::new("Share").show(ui, |ui| {
-                    if ui.button("copy link to clipboard").clicked() {
-                        self.trigger_sharelink(ctx);
-                    }
-                    #[cfg(not(target_arch = "wasm32"))]
-                    ui.horizontal(|ui| {
-                        ui.text_edit_singleline(&mut self.session_id_to_be_loaded);
-                        if ui.button("load session from link").clicked() {
-                            self.trigger_load(&self.session_id_to_be_loaded.clone(), None);
-                        }
-                    });
-                });
-                heading2(ui, "1. Add Charts");
+                heading2(ui, "1. Add Price Development(s)");
                 egui::CollapsingHeader::new("Simulate").show(ui, |ui| {
                     egui::Grid::new("simulate-inputs")
                         .num_columns(2)
@@ -786,13 +776,16 @@ impl<'a> eframe::App for BalanceApp<'a> {
                     });
                 });
 
-                if ui.button("Add current chart to balance").clicked() {
+                if ui
+                    .button("Persist price development for balance computation")
+                    .clicked()
+                {
                     self.best_rebalance_trigger = None;
                     self.charts.persist_tmp();
                     self.recompute_balance();
                 }
                 ui.separator();
-                heading2(ui, "2. Set (Re-)Balance");
+                heading2(ui, "2. Set Investments");
                 ui.label("Initial balance");
                 if ui
                     .text_edit_singleline(&mut self.payment.initial_balance.0)
@@ -929,7 +922,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                     });
                 }
                 ui.separator();
-                heading2(ui, "3. Investigate Results");
+                heading2(ui, "3. Investigate Results of Balance Computation");
 
                 egui::Grid::new("balance-number-results").show(ui, |ui| {
                     if let Some(final_balance) = &self.final_balance {
@@ -1009,11 +1002,6 @@ impl<'a> eframe::App for BalanceApp<'a> {
                                 None
                             }
                         };
-                    }
-                    if ui.button("Download as csv").clicked() {
-                        #[cfg(target_arch = "wasm32")]
-                        log("download csv");
-                        export_csv(&self.charts).unwrap();
                     }
                 });
                 ui.separator();
@@ -1140,6 +1128,29 @@ impl<'a> eframe::App for BalanceApp<'a> {
                     self.status_msg = Some(format!("{e}"));
                 }
                 ui.separator();
+                egui::CollapsingHeader::new("Share your balance").show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        if ui.button("Copy link to clipboard").clicked() {
+                            self.trigger_sharelink(ctx);
+                        }
+                        #[cfg(not(target_arch = "wasm32"))]
+                        {
+                            ui.text_edit_singleline(&mut self.session_id_to_be_loaded);
+                            if ui.button("Load").clicked() {
+                                self.trigger_load(&self.session_id_to_be_loaded.clone(), None);
+                            }
+                        }
+                    });
+                    ui.end_row();
+                    if ui.button("Download charts as csv").clicked() {
+                        #[cfg(target_arch = "wasm32")]
+                        log("download csv");
+                        export_csv(&self.charts).unwrap();
+                    }
+                });
+                if ui.button("Reset").clicked() {
+                    *self = Self::default();
+                }
                 ui.horizontal(|ui| {
                     ui.label("Code on");
                     ui.hyperlink_to("Github", "https://github.com/bertiqwerty/balance");
