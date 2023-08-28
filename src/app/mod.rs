@@ -748,6 +748,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                         )
                         .clicked()
                     {
+                        self.best_rebalance_trigger = None;
                         self.recompute_rebalance_stats(true);
                     } else if ui
                         .selectable_label(
