@@ -444,6 +444,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                             format!("{}", VolaAmount::Hi),
                         );
                     });
+                    let mut to_be_deleted = vec![];
                     egui::CollapsingHeader::new("Advanced").show(ui, |ui| {
                         egui::Grid::new("simulate-advanced")
                             .num_columns(2)
@@ -456,7 +457,35 @@ impl<'a> eframe::App for BalanceApp<'a> {
                                 ui.end_row();
                                 ui.label("Times of similar volatility");
                                 ui.checkbox(&mut self.sim.vola.smoothing, "");
+                                ui.end_row();
+                                for (i, s) in self.sim.crashes.iter_mut().enumerate() {
+                                    ui.label(format!("crash {}", i + 1));
+                                    s.month_slider(ui);
+                                    if ui.button("x").clicked() {
+                                        to_be_deleted.push(i);
+                                    }
+                                    ui.end_row();
+                                }
                             });
+                        if !self.sim.crashes.is_empty() {
+                            remove_indices(&mut self.sim.crashes, &to_be_deleted);
+                        }
+                        if ui.button("Add crash").clicked() {
+                            let start_end = self.charts.start_end_date(true);
+                            match start_end {
+                                Ok(se) => {
+                                    let (start_date, end_date) = se;
+                                    self.sim.crashes.push(MonthSlider::new(
+                                        start_date,
+                                        end_date,
+                                        SliderState::First,
+                                    ))
+                                }
+                                Err(e) => {
+                                    self.status_msg = Some(format!("{e}"));
+                                }
+                            }
+                        }
                     });
                     ui.horizontal(|ui| {
                         if ui.button("Run simulation").clicked() {
