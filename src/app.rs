@@ -671,19 +671,6 @@ impl<'a> eframe::App for BalanceApp<'a> {
                             ui.label("start date");
                             self.sim.start_month_slider.month_slider(ui);
                         });
-                    egui::CollapsingHeader::new("Advanced").show(ui, |ui| {
-                        egui::Grid::new("simulate-advanced")
-                            .num_columns(2)
-                            .show(ui, |ui| {
-                                ui.label("Name (auto-generated if empty)");
-                                ui.text_edit_singleline(&mut self.sim.name);
-                                ui.end_row();
-                                ui.label("Return independent of previous returns");
-                                ui.checkbox(&mut self.sim.is_eyr_markovian, "");
-                                ui.end_row();
-                                ui.label("Times of different volatility");
-                                ui.checkbox(&mut self.sim.vola.smoothing, "");
-                            });
                         ui.horizontal(|ui| {
                             ui.label("Vola");
                             ui.radio_value(
@@ -707,6 +694,19 @@ impl<'a> eframe::App for BalanceApp<'a> {
                                 format!("{}", VolaAmount::Hi),
                             );
                         });
+                    egui::CollapsingHeader::new("Advanced").show(ui, |ui| {
+                        egui::Grid::new("simulate-advanced")
+                            .num_columns(2)
+                            .show(ui, |ui| {
+                                ui.label("Name (auto-generated if empty)");
+                                ui.text_edit_singleline(&mut self.sim.name);
+                                ui.end_row();
+                                ui.label("Return independent of previous returns");
+                                ui.checkbox(&mut self.sim.is_eyr_markovian, "");
+                                ui.end_row();
+                                ui.label("Times of different volatility");
+                                ui.checkbox(&mut self.sim.vola.smoothing, "");
+                            });
                     });
                     ui.horizontal(|ui| {
                         if ui.button("Run simulation").clicked() {
