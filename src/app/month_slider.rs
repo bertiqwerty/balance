@@ -66,7 +66,7 @@ impl MonthSlider {
         }
     }
 
-    fn slider_idx(&self) -> Option<usize> {
+    pub fn slider_idx(&self) -> Option<usize> {
         self.slider_state.slider_idx(self.possible_dates.len())
     }
 

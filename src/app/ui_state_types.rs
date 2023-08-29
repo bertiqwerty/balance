@@ -146,7 +146,7 @@ pub struct SimInput {
     pub crashes: Vec<MonthSlider>,
 }
 impl SimInput {
-    pub fn parse(&self) -> BlcResult<(f64, usize, f64, bool, Date, usize)> {
+    pub fn parse(&self) -> BlcResult<(f64, usize, f64, bool, Date, usize, Vec<usize>)> {
         Ok((
             self.vola.amount_as_float(),
             if self.vola.smoothing {
@@ -160,6 +160,7 @@ impl SimInput {
                 .selected_date()
                 .ok_or_else(|| blcerr!("no date selected"))?,
             self.n_months.parse().map_err(to_blc)?,
+            self.crashes.iter().flat_map(|slider|slider.slider_idx()).collect()
         ))
     }
 }

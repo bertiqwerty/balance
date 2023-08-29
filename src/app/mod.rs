@@ -459,7 +459,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                                 ui.checkbox(&mut self.sim.vola.smoothing, "");
                                 ui.end_row();
                                 for (i, s) in self.sim.crashes.iter_mut().enumerate() {
-                                    ui.label(format!("crash {}", i + 1));
+                                    ui.label(format!("Crash {}", i + 1));
                                     s.month_slider(ui);
                                     if ui.button("x").clicked() {
                                         to_be_deleted.push(i);
@@ -474,15 +474,32 @@ impl<'a> eframe::App for BalanceApp<'a> {
                             let start_end = self.charts.start_end_date(true);
                             match start_end {
                                 Ok(se) => {
-                                    let (start_date, end_date) = se;
+                                    let (start, end) = se;
                                     self.sim.crashes.push(MonthSlider::new(
-                                        start_date,
-                                        end_date,
+                                        start,
+                                        end,
                                         SliderState::First,
                                     ))
                                 }
-                                Err(e) => {
-                                    self.status_msg = Some(format!("{e}"));
+                                Err(_) => {
+                                    if let (Some(start), Ok(n_month)) = (
+                                        self.sim.start_month_slider.selected_date(),
+                                        self.sim.n_months.parse::<usize>(),
+                                    ) {
+                                        let end = start + n_month;
+                                        if let Ok(end) = end {
+                                            self.sim.crashes.push(MonthSlider::new(
+                                                start,
+                                                end,
+                                                SliderState::First,
+                                            ))
+                                        }
+                                    } else {
+                                        self.status_msg = Some(format!(
+                                            "couldn't parse n_month, what integer>0 is {}",
+                                            self.sim.n_months
+                                        ));
+                                    }
                                 }
                             }
                         }
@@ -499,13 +516,29 @@ impl<'a> eframe::App for BalanceApp<'a> {
                                         is_eyr_independent,
                                         start_date,
                                         n_months,
+                                        mut crashes,
                                     ) = data;
+                                    // remove crashes that are not within relevant timespan
+                                    let to_be_del = self
+                                        .sim
+                                        .crashes
+                                        .iter()
+                                        .enumerate()
+                                        .flat_map(|(idx, c)| c.selected_date().map(|d| (idx, d)))
+                                        .filter(|(_, d)| {
+                                            d < &start_date
+                                                || d > &(start_date + n_months).unwrap_or(*d)
+                                        })
+                                        .map(|(idx, _)| idx)
+                                        .collect::<Vec<_>>();
+                                    remove_indices(&mut crashes, &to_be_del);
                                     match random_walk(
                                         expected_yearly_return,
                                         is_eyr_independent,
                                         noise,
                                         smoothing_window_size,
                                         n_months,
+                                        &crashes,
                                     ) {
                                         Ok(values) => {
                                             let chart = Chart::new(
@@ -604,7 +637,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                                 if i > 0 {
                                     ui.label(format!("Monthly payment {}", i + 1).as_str());
                                 } else {
-                                    ui.label("Monthly payments");
+                                    ui.label("Monthly payment");
                                 }
                                 if ui
                                     .text_edit_singleline(

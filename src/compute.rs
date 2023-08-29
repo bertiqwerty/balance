@@ -191,15 +191,35 @@ pub fn random_walk(
     sigma_mean: f64,
     sigma_window_size: usize,
     n_months: usize,
+    crashes: &[usize],
 ) -> BlcResult<Vec<f64>> {
+    let mut rng = StdRng::seed_from_u64(unix_to_now_nanos()?);
     let mut sigma_rng = StdRng::seed_from_u64(unix_to_now_nanos()?);
     let sigma_distribution = Normal::new(sigma_mean, sigma_mean).map_err(to_blc)?;
     let mut last_sigmas = vec![sigma_mean; sigma_window_size];
-    let mut monthly_factor_rng = StdRng::seed_from_u64(unix_to_now_nanos()?);
     let start_price = 1e5;
     let mut res = vec![start_price; n_months + 1];
     let expected_monthly_return = (1.0 + (expected_yearly_return / 100.0)).powf(1.0 / 12.0);
     let mut mu = expected_monthly_return;
+    let crash_radius = 3;
+
+    let crash_mu_dist_factors = (0..crash_radius)
+        .map(|distance| 0.7 + 0.3 * distance as f64 / crash_radius as f64)
+        .collect::<Vec<_>>();
+    let crash_mu_factors = (0..n_months)
+        .map(|m| {
+            let d = crashes
+                .iter()
+                .map(|c| (m as i32 - *c as i32).abs())
+                .min()
+                .unwrap_or(n_months as i32) as usize;
+            if d < crash_radius {
+                crash_mu_dist_factors[d]
+            } else {
+                1.0
+            }
+        })
+        .collect::<Vec<_>>();
     for (i, sigma) in (1..(n_months + 1)).zip(sigma_distribution.sample_iter(&mut sigma_rng)) {
         for i in 0..(sigma_window_size - 1) {
             last_sigmas[i] = last_sigmas[i + 1];
@@ -207,8 +227,8 @@ pub fn random_walk(
         last_sigmas[sigma_window_size - 1] = sigma;
         last_sigmas.sort_by(|a, b| a.partial_cmp(b).unwrap());
         let sigma = last_sigmas[sigma_window_size / 2].abs();
-        let d = Normal::new(mu, sigma).map_err(to_blc)?;
-        let monthly_factor = d.sample(&mut monthly_factor_rng);
+        let d = Normal::new(mu * crash_mu_factors[i - 1], sigma).map_err(to_blc)?;
+        let monthly_factor = d.sample(&mut rng);
         res[i] = res[i - 1] * monthly_factor;
 
         if !is_markovian && sigma - sigma_mean > 0.0 {
@@ -560,13 +580,13 @@ fn test_compute_balance() {
 
 #[test]
 fn test_compound() {
-    let compound_interest: Vec<f64> = random_walk(5.0, true, 0.0, 12, 240).unwrap();
+    let compound_interest: Vec<f64> = random_walk(5.0, true, 0.0, 12, 240, &[]).unwrap();
     let (b, p) =
         compute_total_balance(&[&compound_interest], &[10000.0], None, NONE_REBALANCE_DATA);
     assert!((b - 26532.98).abs() < 1e-2);
     assert!((p - 10000.0).abs() < 1e-12);
 
-    let compound_interest: Vec<f64> = random_walk(5.0, true, 0.0, 12, 360).unwrap();
+    let compound_interest: Vec<f64> = random_walk(5.0, true, 0.0, 12, 360, &[]).unwrap();
     let ci_len = compound_interest.len();
     let monthly_payments: Vec<f64> = vec![1000.0; ci_len - 1];
     let (b, _) = compute_total_balance(
