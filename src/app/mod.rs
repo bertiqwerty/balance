@@ -22,7 +22,8 @@ mod ui_state_types;
 use std::{fs::File, io::Write};
 
 use self::ui_state_types::{
-    FinalBalance, PaymentData, RestMethod, RestRequest, RestRequestState, SimInput, VolaAmount,
+    FinalBalance, ParsedSimInput, PaymentData, RestMethod, RestRequest, RestRequestState, SimInput,
+    VolaAmount,
 };
 
 #[cfg(target_arch = "wasm32")]
@@ -508,16 +509,16 @@ impl<'a> eframe::App for BalanceApp<'a> {
                         if ui.button("Run simulation").clicked() {
                             self.rebalance_stats = None;
                             match self.sim.parse() {
-                                Ok(data) => {
-                                    let (
-                                        noise,
-                                        smoothing_window_size,
+                                Ok(parsed) => {
+                                    let ParsedSimInput {
+                                        vola,
+                                        vola_window,
                                         expected_yearly_return,
-                                        is_eyr_independent,
-                                        start_date,
+                                        is_eyr_markovian,
+                                        start_month: start_date,
                                         n_months,
                                         mut crashes,
-                                    ) = data;
+                                    } = parsed;
                                     // remove crashes that are not within relevant timespan
                                     let to_be_del = self
                                         .sim
@@ -534,9 +535,9 @@ impl<'a> eframe::App for BalanceApp<'a> {
                                     remove_indices(&mut crashes, &to_be_del);
                                     match random_walk(
                                         expected_yearly_return,
-                                        is_eyr_independent,
-                                        noise,
-                                        smoothing_window_size,
+                                        is_eyr_markovian,
+                                        vola,
+                                        vola_window,
                                         n_months,
                                         &crashes,
                                     ) {

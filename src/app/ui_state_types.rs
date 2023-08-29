@@ -135,6 +135,16 @@ impl Display for VolaAmount {
     }
 }
 
+pub struct ParsedSimInput {
+    pub vola: f64,
+    pub vola_window: usize,
+    pub expected_yearly_return: f64,
+    pub is_eyr_markovian: bool,
+    pub start_month: Date,
+    pub n_months: usize,
+    pub crashes: Vec<usize>,
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct SimInput {
     pub vola: Vola,
@@ -146,22 +156,27 @@ pub struct SimInput {
     pub crashes: Vec<MonthSlider>,
 }
 impl SimInput {
-    pub fn parse(&self) -> BlcResult<(f64, usize, f64, bool, Date, usize, Vec<usize>)> {
-        Ok((
-            self.vola.amount_as_float(),
-            if self.vola.smoothing {
+    pub fn parse(&self) -> BlcResult<ParsedSimInput> {
+        Ok(ParsedSimInput {
+            vola: self.vola.amount_as_float(),
+            vola_window: if self.vola.smoothing {
                 self.vola.smoothing_window
             } else {
                 1
             },
-            self.expected_yearly_return.parse().map_err(to_blc)?,
-            self.is_eyr_markovian,
-            self.start_month_slider
+            expected_yearly_return: self.expected_yearly_return.parse().map_err(to_blc)?,
+            is_eyr_markovian: self.is_eyr_markovian,
+            start_month: self
+                .start_month_slider
                 .selected_date()
                 .ok_or_else(|| blcerr!("no date selected"))?,
-            self.n_months.parse().map_err(to_blc)?,
-            self.crashes.iter().flat_map(|slider|slider.slider_idx()).collect()
-        ))
+            n_months: self.n_months.parse().map_err(to_blc)?,
+            crashes: self
+                .crashes
+                .iter()
+                .flat_map(|slider| slider.slider_idx())
+                .collect(),
+        })
     }
 }
 impl Default for SimInput {
