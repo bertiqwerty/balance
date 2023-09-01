@@ -76,6 +76,7 @@ impl MonthSlider {
             let changed = ui
                 .add(
                     egui::Slider::new(&mut tmp_idx, 0..=self.possible_dates.len() - 1)
+                        .drag_value_speed(0.2)
                         .custom_formatter(|idx, _| {
                             self.possible_dates[idx.round() as usize].to_string()
                         }),
