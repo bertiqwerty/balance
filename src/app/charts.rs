@@ -59,23 +59,28 @@ impl MonthlyPayments {
         end: Date,
         f: impl Fn(f64) -> f64,
     ) -> BlcResult<Vec<f64>> {
-        Ok(Interval::new(start, end)?
-            .into_iter()
-            .map(|current_date| {
-                self.payments
-                    .iter()
-                    .zip(self.intervals.iter())
-                    .filter(|(_, inter)| {
-                        if let Some(inter) = inter {
-                            inter.contains(current_date)
-                        } else {
-                            true
-                        }
-                    })
-                    .map(|(pay, _)| f(*pay))
-                    .sum::<f64>()
-            })
-            .collect())
+        self.expand_payments_iter(start, end, f).map(|it|it.collect())
+    }
+    pub fn expand_payments_iter<'a>(
+        &'a self,
+        start: Date,
+        end: Date,
+        f: impl Fn(f64) -> f64 + 'a,
+    ) -> BlcResult<impl Iterator<Item = f64> + 'a> {
+        Ok(Interval::new(start, end)?.into_iter().map(move |current_date| {
+            self.payments
+                .iter()
+                .zip(self.intervals.iter())
+                .filter(|(_, inter)| {
+                    if let Some(inter) = inter {
+                        inter.contains(current_date)
+                    } else {
+                        true
+                    }
+                })
+                .map(|(pay, _)| f(*pay))
+                .sum::<f64>()
+        }))
     }
     pub fn sum_payments_total(&self, n_total_months: usize, f: impl Fn(f64) -> f64) -> f64 {
         self.payments
