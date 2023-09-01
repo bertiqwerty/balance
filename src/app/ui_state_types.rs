@@ -4,6 +4,7 @@ use std::sync::mpsc::{self, Receiver, Sender};
 
 use egui::Context;
 
+use crate::compute::MonthlyPayments;
 use crate::{
     blcerr,
     compute::yearly_return,
@@ -12,7 +13,7 @@ use crate::{
 };
 
 use super::{
-    charts::{Chart, MonthlyPayments},
+    charts::Chart,
     month_slider::{MonthSlider, MonthSliderPair, SliderState},
 };
 

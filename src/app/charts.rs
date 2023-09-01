@@ -2,10 +2,11 @@ use crate::{
     blcerr,
     compute::{
         adapt_pricedev_to_initial_balance, best_rebalance_trigger, compute_balance_over_months,
-        rebalance_stats, BestRebalanceTrigger, RebalanceData, RebalanceStats, RebalanceTrigger,
+        rebalance_stats, BestRebalanceTrigger, MonthlyPayments, RebalanceData, RebalanceStats,
+        RebalanceTrigger,
     },
     core_types::BlcResult,
-    date::{fill_between, Date, Interval},
+    date::{fill_between, Date},
 };
 
 use super::month_slider::{MonthSlider, MonthSliderPair, SliderState};
@@ -16,87 +17,6 @@ use egui::{
 use serde::{Deserialize, Serialize};
 use std::iter::Iterator;
 use std::{fmt::Display, iter, mem, ops::RangeInclusive, str::FromStr};
-
-#[derive(Default, Debug, Clone, Serialize, Deserialize)]
-pub struct MonthlyPayments {
-    // payment per interval
-    payments: Vec<f64>,
-    intervals: Vec<Option<Interval>>,
-}
-impl MonthlyPayments {
-    pub fn from_intervals(payments: Vec<f64>, intervals: Vec<Interval>) -> BlcResult<Self> {
-        if payments.len() != intervals.len() {
-            Err(blcerr!("payments and intervals need to be equally long"))
-        } else {
-            Ok(MonthlyPayments {
-                payments,
-                intervals: intervals.into_iter().map(Some).collect(),
-            })
-        }
-    }
-    pub fn from_single_payment(payment: f64) -> Self {
-        MonthlyPayments {
-            payments: vec![payment],
-            intervals: vec![None],
-        }
-    }
-    ///
-    /// Creates a vector of payments over months. If intervals have overlap their payments will be added.
-    ///
-    /// # Arguments
-    ///
-    /// * start: start of complete time axis
-    /// * end: end of complete time axis (including)
-    /// * f: function that will be applied to each payment before collecting in result vector
-    ///
-    /// # Errors
-    ///
-    /// * Number of payments and intervals do not match
-    ///
-    pub fn expand_payments(
-        &self,
-        start: Date,
-        end: Date,
-        f: impl Fn(f64) -> f64,
-    ) -> BlcResult<Vec<f64>> {
-        self.expand_payments_iter(start, end, f).map(|it|it.collect())
-    }
-    pub fn expand_payments_iter<'a>(
-        &'a self,
-        start: Date,
-        end: Date,
-        f: impl Fn(f64) -> f64 + 'a,
-    ) -> BlcResult<impl Iterator<Item = f64> + 'a> {
-        Ok(Interval::new(start, end)?.into_iter().map(move |current_date| {
-            self.payments
-                .iter()
-                .zip(self.intervals.iter())
-                .filter(|(_, inter)| {
-                    if let Some(inter) = inter {
-                        inter.contains(current_date)
-                    } else {
-                        true
-                    }
-                })
-                .map(|(pay, _)| f(*pay))
-                .sum::<f64>()
-        }))
-    }
-    pub fn sum_payments_total(&self, n_total_months: usize, f: impl Fn(f64) -> f64) -> f64 {
-        self.payments
-            .iter()
-            .zip(self.intervals.iter())
-            .map(|(pay, inter)| {
-                f(*pay)
-                    * if let Some(inter) = inter {
-                        inter.len() as f64
-                    } else {
-                        n_total_months as f64
-                    }
-            })
-            .sum()
-    }
-}
 
 /// Intersects all timelines of all given charts
 fn start_end_date<'a>(charts: impl Iterator<Item = &'a Chart> + Clone) -> BlcResult<(Date, Date)> {
@@ -720,6 +640,9 @@ impl Display for Charts {
         }
     }
 }
+
+#[cfg(test)]
+use crate::date::Interval;
 
 #[test]
 fn test_add_fraction() {
