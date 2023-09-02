@@ -14,7 +14,7 @@ impl<T: Default> MutItemList<T> {
         ui: &mut Ui,
         mut show_item: impl FnMut(usize, &mut T, &mut Ui),
         mut make_item: impl FnMut() -> BlcResult<T>,
-        add_label: &str
+        add_label: &str,
     ) {
         if ui.button(add_label).clicked() {
             if let Ok(item) = make_item() {

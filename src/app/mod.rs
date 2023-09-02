@@ -474,11 +474,14 @@ impl<'a> eframe::App for BalanceApp<'a> {
                                 ui.label("Times of similar volatility");
                                 ui.checkbox(&mut self.sim.vola.smoothing, "");
                                 ui.end_row();
-                                let show_crash = |i, month_slider: &mut MonthSlider, ui: &mut Ui| {
-                                    ui.label(format!("Crash {}", i + 1));
-                                    month_slider.month_slider(ui);
-                                };
-                                self.sim.crashes.show(ui, show_crash, add_crash, "Add crash");
+                                let show_crash =
+                                    |i, month_slider: &mut MonthSlider, ui: &mut Ui| {
+                                        ui.label(format!("Crash {}", i + 1));
+                                        month_slider.month_slider(ui);
+                                    };
+                                self.sim
+                                    .crashes
+                                    .show(ui, show_crash, add_crash, "Add crash");
                             })
                     });
 
