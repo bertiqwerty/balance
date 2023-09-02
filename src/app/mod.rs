@@ -1,7 +1,9 @@
+use crate::blcerr;
 use crate::compute::{
     random_walk, yearly_return, BestRebalanceTrigger, RebalanceStats, RebalanceStatsSummary,
     RebalanceTrigger,
 };
+use crate::container_util::remove_indices;
 use crate::core_types::{to_blc, BlcResult};
 use crate::date::date_after_nmonths;
 use crate::io::{
@@ -14,8 +16,10 @@ use month_slider::{MonthSlider, MonthSliderPair, SliderState};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::iter;
+use std::mem;
 mod charts;
 mod month_slider;
+mod ui_mut_itemlist;
 mod ui_state_types;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -84,19 +88,6 @@ fn export_csv(charts: &Charts) -> BlcResult<()> {
 extern "C" {
     #[wasm_bindgen(js_namespace = console)]
     fn log(s: &str);
-}
-
-fn remove_indices<T: Clone>(v: &mut Vec<T>, to_be_deleted: &[usize]) {
-    let mut target_idx = 0;
-    for src_idx in 0..v.len() {
-        if !to_be_deleted.contains(&src_idx) {
-            if src_idx != target_idx {
-                v[target_idx] = v[src_idx].clone();
-            }
-            target_idx += 1;
-        }
-    }
-    v.truncate(target_idx);
 }
 
 fn heading2(ui: &mut Ui, s: &str) -> Response {
@@ -445,7 +436,31 @@ impl<'a> eframe::App for BalanceApp<'a> {
                             format!("{}", VolaAmount::Hi),
                         );
                     });
-                    let mut to_be_deleted = vec![];
+                    let add_crash = || {
+                        let start_end = self.charts.start_end_date(true);
+                        match start_end {
+                            Ok(se) => {
+                                let (start, end) = se;
+                                Ok(MonthSlider::new(start, end, SliderState::First))
+                            }
+                            Err(_) => {
+                                if let (Some(start), Ok(n_month)) = (
+                                    self.sim.start_month_slider.selected_date(),
+                                    self.sim.n_months.parse::<usize>(),
+                                ) {
+                                    let end = start + n_month;
+                                    end.map(|end| MonthSlider::new(start, end, SliderState::First))
+                                } else {
+                                    let err = blcerr!(
+                                        "couldn't parse n_month, what integer>0 is {}",
+                                        self.sim.n_months
+                                    );
+                                    self.status_msg = Some(err.msg.to_string());
+                                    Err(err)
+                                }
+                            }
+                        }
+                    };
                     egui::CollapsingHeader::new("Advanced").show(ui, |ui| {
                         egui::Grid::new("simulate-advanced")
                             .num_columns(2)
@@ -459,52 +474,14 @@ impl<'a> eframe::App for BalanceApp<'a> {
                                 ui.label("Times of similar volatility");
                                 ui.checkbox(&mut self.sim.vola.smoothing, "");
                                 ui.end_row();
-                                for (i, s) in self.sim.crashes.iter_mut().enumerate() {
+                                let show_crash = |i, month_slider: &mut MonthSlider, ui: &mut Ui| {
                                     ui.label(format!("Crash {}", i + 1));
-                                    s.month_slider(ui);
-                                    if ui.button("x").clicked() {
-                                        to_be_deleted.push(i);
-                                    }
-                                    ui.end_row();
-                                }
-                            });
-                        if !self.sim.crashes.is_empty() {
-                            remove_indices(&mut self.sim.crashes, &to_be_deleted);
-                        }
-                        if ui.button("Add crash").clicked() {
-                            let start_end = self.charts.start_end_date(true);
-                            match start_end {
-                                Ok(se) => {
-                                    let (start, end) = se;
-                                    self.sim.crashes.push(MonthSlider::new(
-                                        start,
-                                        end,
-                                        SliderState::First,
-                                    ))
-                                }
-                                Err(_) => {
-                                    if let (Some(start), Ok(n_month)) = (
-                                        self.sim.start_month_slider.selected_date(),
-                                        self.sim.n_months.parse::<usize>(),
-                                    ) {
-                                        let end = start + n_month;
-                                        if let Ok(end) = end {
-                                            self.sim.crashes.push(MonthSlider::new(
-                                                start,
-                                                end,
-                                                SliderState::First,
-                                            ))
-                                        }
-                                    } else {
-                                        self.status_msg = Some(format!(
-                                            "couldn't parse n_month, what integer>0 is {}",
-                                            self.sim.n_months
-                                        ));
-                                    }
-                                }
-                            }
-                        }
+                                    month_slider.month_slider(ui);
+                                };
+                                self.sim.crashes.show(ui, show_crash, add_crash, "Add crash");
+                            })
                     });
+
                     ui.horizontal(|ui| {
                         if ui.button("Run simulation").clicked() {
                             self.rebalance_stats = None;
@@ -517,7 +494,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                                         is_eyr_markovian,
                                         start_month: start_date,
                                         n_months,
-                                        mut crashes,
+                                        crashes,
                                     } = parsed;
                                     // remove crashes that are not within relevant timespan
                                     let to_be_del = self
@@ -532,7 +509,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                                         })
                                         .map(|(idx, _)| idx)
                                         .collect::<Vec<_>>();
-                                    remove_indices(&mut crashes, &to_be_del);
+                                    let crashes = remove_indices(crashes, &to_be_del);
                                     match random_walk(
                                         expected_yearly_return,
                                         is_eyr_markovian,
@@ -665,13 +642,13 @@ impl<'a> eframe::App for BalanceApp<'a> {
                                 }
                                 ui.end_row();
                             }
-                            remove_indices(
-                                &mut self.payment.monthly_payments.sliders,
+                            self.payment.monthly_payments.sliders = remove_indices(
+                                mem::take(&mut self.payment.monthly_payments.sliders),
                                 &to_be_deleted,
                             );
                             if self.payment.monthly_payments.pay_fields.len() > 1 {
-                                remove_indices(
-                                    &mut self.payment.monthly_payments.pay_fields,
+                                self.payment.monthly_payments.pay_fields = remove_indices(
+                                    mem::take(&mut self.payment.monthly_payments.pay_fields),
                                     &to_be_deleted,
                                 );
                             }

@@ -17,9 +17,8 @@ eframe = { version = "0.22.0", default-features = false, features = [
     "glow",          # Use the glow rendering backend. Alternative: "wgpu".
     "persistence",   # Enable restoring app state when restarting the app.
 ] }
-# You only need serde if you want app persistence:
 serde = { version = "1", features = ["derive"] }
-# ureq = "2.6.2"
+exmex = "0.17.3"
 web-sys = { version = "0.3.64", features = [
     "Window",
     "Document",

@@ -12,6 +12,7 @@ use crate::{
     date::{Date, Interval},
 };
 
+use super::ui_mut_itemlist::MutItemList;
 use super::{
     charts::Chart,
     month_slider::{MonthSlider, MonthSliderPair, SliderState},
@@ -154,7 +155,7 @@ pub struct SimInput {
     pub start_month_slider: MonthSlider,
     pub n_months: String,
     pub name: String,
-    pub crashes: Vec<MonthSlider>,
+    pub crashes: MutItemList<MonthSlider>,
 }
 impl SimInput {
     pub fn parse(&self) -> BlcResult<ParsedSimInput> {
@@ -193,7 +194,7 @@ impl Default for SimInput {
                 SliderState::Some(480),
             ),
             name: "".to_string(),
-            crashes: vec![],
+            crashes: MutItemList::default(),
         }
     }
 }
