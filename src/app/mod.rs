@@ -717,6 +717,13 @@ impl<'a> eframe::App for BalanceApp<'a> {
                         }
                         ui.end_row();
                     });
+                    if !self.charts.persisted.is_empty() {
+                        egui::Grid::new("grid-persistend-charts").show(ui, |ui| {
+                            if self.charts.fraction_sliders(ui) {
+                                recompute!(self);
+                            }
+                        });
+                    }
                 });
                 egui::CollapsingHeader::new("Restrict timeline").show(ui, |ui| {
                     egui::Grid::new("restriction-of-timeline").show(ui, |ui| {
@@ -729,14 +736,6 @@ impl<'a> eframe::App for BalanceApp<'a> {
                         }
                     });
                 });
-                if !self.charts.persisted.is_empty() {
-                    ui.separator();
-                    egui::Grid::new("grid-persistend-charts").show(ui, |ui| {
-                        if self.charts.fraction_sliders(ui) {
-                            recompute!(self);
-                        }
-                    });
-                }
                 ui.separator();
                 heading2(ui, "3. Investigate Results of Balance Computation");
                 egui::Grid::new("balance-number-results").show(ui, |ui| {
