@@ -14,7 +14,7 @@ impl<T: Default> MutItemList<T> {
         mut show_item: impl FnMut(usize, &mut T, &mut Ui),
         mut make_item: impl FnMut() -> BlcResult<T>,
         add_label: &str,
-    ) {
+    ) -> Option<(usize, T)> {
         if ui.button(add_label).clicked() {
             if let Ok(item) = make_item() {
                 self.items.push(item)
@@ -30,7 +30,10 @@ impl<T: Default> MutItemList<T> {
             ui.end_row();
         }
         if let Some(to_be_deleted) = to_be_deleted {
-            self.items.remove(to_be_deleted);
+            let removed = self.items.remove(to_be_deleted);
+            Some((to_be_deleted, removed))
+        } else {
+            None
         }
     }
     pub fn iter(&self) -> impl Iterator<Item = &T> {
