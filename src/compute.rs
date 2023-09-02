@@ -98,9 +98,15 @@ pub fn yearly_return(
     n_months: usize,
     final_balance: f64,
 ) -> (f64, f64) {
-    let total_yield = final_balance / (initial_payment + total_monthly);
-    let yearly_return_perc = 100.0 * (total_yield.powf(1.0 / ((n_months - 1) as f64 / 12.0)) - 1.0);
-    (yearly_return_perc, total_yield)
+    let total_payments = initial_payment + total_monthly;
+    let total_yield = final_balance / total_payments;
+    if total_monthly < 0.0 {
+        (f64::NAN, total_yield)
+    } else {
+        let yearly_return_perc =
+            100.0 * (total_yield.powf(1.0 / ((n_months - 1) as f64 / 12.0)) - 1.0);
+        (yearly_return_perc, total_yield)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
