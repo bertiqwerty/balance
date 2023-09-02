@@ -1,8 +1,7 @@
 use egui::Ui;
 use serde::{Deserialize, Serialize};
-use std::mem;
 
-use crate::{container_util::remove_indices, core_types::BlcResult};
+use crate::core_types::BlcResult;
 
 #[derive(Default, Deserialize, Serialize)]
 pub struct MutItemList<T: Default> {
@@ -22,16 +21,16 @@ impl<T: Default> MutItemList<T> {
             }
         }
         ui.end_row();
-        let mut to_be_deleted = vec![];
+        let mut to_be_deleted = None;
         for (i, item) in self.items.iter_mut().enumerate() {
             show_item(i, item, ui);
             if ui.button("x").clicked() {
-                to_be_deleted.push(i);
+                to_be_deleted = Some(i);
             }
             ui.end_row();
         }
-        if !self.items.is_empty() {
-            self.items = remove_indices(mem::take(&mut self.items), &to_be_deleted);
+        if let Some(to_be_deleted) = to_be_deleted {
+            self.items.remove(to_be_deleted);
         }
     }
     pub fn iter(&self) -> impl Iterator<Item = &T> {
