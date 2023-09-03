@@ -772,25 +772,20 @@ impl<'a> eframe::App for BalanceApp<'a> {
                         let FinalBalance {
                             final_balance,
                             yearly_return_perc,
-                            total_yield,
                             total_payments,
                         } = final_balance;
                         ui.label("Final balance");
                         ui.label(RichText::new(format_num(*final_balance)).strong());
-                        ui.label("Yearly reaturn [%]");
-                        ui.label(RichText::new(format_num(*yearly_return_perc)).strong());
-                        ui.label("Factor");
-                        ui.label(RichText::new(format_num(*total_yield)).strong());
                         ui.label("Total payments");
                         ui.label(RichText::new(format_num(*total_payments)).strong());
+                        ui.label("Yearly reaturn [%]");
+                        ui.label(RichText::new(format_num(*yearly_return_perc)).strong());
                     } else {
                         ui.label("Final balance");
                         ui.label("-");
-                        ui.label("Yearly return [%]");
-                        ui.label("-");
-                        ui.label("Factor");
-                        ui.label("-");
                         ui.label("Total payments");
+                        ui.label("-");
+                        ui.label("Yearly return [%]");
                         ui.label("-");
                     }
                 });

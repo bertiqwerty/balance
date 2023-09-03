@@ -279,7 +279,6 @@ impl Default for PaymentData {
 pub struct FinalBalance {
     pub final_balance: f64,
     pub yearly_return_perc: f64,
-    pub total_yield: f64,
     pub total_payments: f64,
 }
 impl FinalBalance {
@@ -288,12 +287,10 @@ impl FinalBalance {
             price_dev.values().iter().last().copied(),
             payments.values().iter().last().copied(),
         ) {
-            let (yearly_return_perc, total_yield) =
-                yearly_return(total_payments, n_months, final_balance);
+            let (yearly_return_perc, _) = yearly_return(total_payments, n_months, final_balance);
             Ok(FinalBalance {
                 final_balance,
                 yearly_return_perc,
-                total_yield,
                 total_payments,
             })
         } else {
