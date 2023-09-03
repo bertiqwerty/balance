@@ -653,6 +653,7 @@ dependencies = [
  "lazy_static",
  "num",
  "regex",
+ "serde",
  "smallvec",
 ]
 

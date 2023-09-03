@@ -299,15 +299,12 @@ impl<'a> BalanceApp<'a> {
                 self.charts.plot_balance = true;
                 match (
                     self.charts.total_balance_over_month(),
+                    self.charts.total_payments_over_month(),
                     self.charts.n_months_persisted(),
                 ) {
-                    (Some(tbom), Ok(n_months)) => {
-                        let final_balance = FinalBalance::from_chart(
-                            tbom,
-                            *initial_balance,
-                            &monthly_payments.payments,
-                            n_months,
-                        );
+                    (Some(tbom), Some(tp), Ok(n_months)) => {
+                        let final_balance =
+                            FinalBalance::from_chart(tbom, tp, *initial_balance, n_months);
                         match final_balance {
                             Ok(final_balance) => {
                                 self.final_balance = Some(final_balance);
@@ -317,11 +314,11 @@ impl<'a> BalanceApp<'a> {
                             }
                         }
                     }
-                    (_, Err(e)) => {
+                    (_, _, Err(e)) => {
                         self.status_msg = Some(e.to_string());
                         self.final_balance = None;
                     }
-                    (_, _) => {
+                    _ => {
                         self.final_balance = None;
                     }
                 }
@@ -827,16 +824,15 @@ impl<'a> eframe::App for BalanceApp<'a> {
                         ui.label("deviation threshold [%]");
                         ui.end_row();
                         let initial_payment = self.payment.initial_balance.1;
-                        let monthly_payments = self.payment.monthly_payments.payments.clone();
                         let toshow = iter::once(best_trigger.best)
                             .chain(iter::once(best_trigger.with_best_dev))
                             .chain(iter::once(best_trigger.with_best_interval));
-                        for (trigger, balance) in toshow {
+                        for (trigger, balance, total_payments) in toshow {
                             ui.label(format!("{balance:0.2}"));
                             if let Ok(n_months) = self.charts.n_months_persisted() {
                                 let (yearly_return_perc, _) = yearly_return(
                                     initial_payment,
-                                    monthly_payments.sum_payments_total(n_months, |x| x),
+                                    total_payments,
                                     n_months,
                                     balance,
                                 );

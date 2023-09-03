@@ -1,10 +1,11 @@
+use exmex::parse_val;
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 use std::sync::mpsc::{self, Receiver, Sender};
 
 use egui::Context;
 
-use crate::compute::MonthlyPayments;
+use crate::compute::{Expr, MonthlyPayments};
 use crate::{
     blcerr,
     compute::yearly_return,
@@ -198,7 +199,6 @@ impl Default for SimInput {
         }
     }
 }
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MonthlyPaymentState {
     pub payments: MonthlyPayments,
@@ -210,7 +210,7 @@ impl MonthlyPaymentState {
         let payment = 0.0;
         let payment_str = format!("{payment:0.2}");
         Self {
-            payments: MonthlyPayments::from_single_payment(payment),
+            payments: MonthlyPayments::from_single_payment(parse_val(&payment_str).unwrap()),
             pay_fields: vec![payment_str],
             sliders: vec![],
         }
@@ -219,8 +219,8 @@ impl MonthlyPaymentState {
         let payments = self
             .pay_fields
             .iter()
-            .map(|ps| ps.parse::<f64>().map_err(to_blc))
-            .collect::<BlcResult<Vec<f64>>>()?;
+            .map(|ps| parse_val::<i32, f64>(ps).map_err(to_blc))
+            .collect::<BlcResult<Vec<Expr>>>()?;
         let ok_or_date =
             |d: Option<Date>| d.ok_or_else(|| blcerr!("no date selected for monthly payment"));
         let intervals = self
@@ -234,7 +234,7 @@ impl MonthlyPaymentState {
             })
             .collect::<BlcResult<Vec<Interval>>>()?;
         self.payments = if intervals.is_empty() && payments.len() == 1 {
-            MonthlyPayments::from_single_payment(payments[0])
+            MonthlyPayments::from_single_payment(payments[0].clone())
         } else {
             MonthlyPayments::from_intervals(payments, intervals)?
         };
@@ -283,18 +283,17 @@ pub struct FinalBalance {
 }
 impl FinalBalance {
     pub fn from_chart(
-        chart: &Chart,
+        price_dev: &Chart,
+        payments: &Chart,
         initial_payment: f64,
-        monthly_payments: &MonthlyPayments,
         n_months: usize,
     ) -> BlcResult<Self> {
-        if let Some(final_balance) = chart.values().iter().last().copied() {
-            let (yearly_return_perc, total_yield) = yearly_return(
-                initial_payment,
-                monthly_payments.sum_payments_total(n_months, |x| x),
-                n_months,
-                final_balance,
-            );
+        if let (Some(final_balance), Some(total_payment)) = (
+            price_dev.values().iter().last().copied(),
+            payments.values().iter().last().copied(),
+        ) {
+            let (yearly_return_perc, total_yield) =
+                yearly_return(initial_payment, total_payment, n_months, final_balance);
             Ok(FinalBalance {
                 final_balance,
                 yearly_return_perc,

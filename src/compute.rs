@@ -1,22 +1,43 @@
 use crate::{
     blcerr,
     // charts::MonthlyPayments,
-    core_types::{to_blc, BlcResult},
+    core_types::{to_blc, BlcError, BlcResult},
     date::{Date, Interval},
 };
+use exmex::{Express, FlatExVal, Val};
 use rand::{rngs::StdRng, SeedableRng};
 use rand_distr::{Distribution, Normal};
 use serde::{Deserialize, Serialize};
 use std::iter;
 
+pub type Expr = FlatExVal<i32, f64>;
+
+fn eval(expr: &Expr, vars: &[Val<i32, f64>]) -> BlcResult<f64> {
+    let evaluated = expr.eval_relaxed(vars).map_err(to_blc)?;
+    let x = match evaluated {
+        Val::Float(x) => x,
+        Val::Int(n) => n as f64,
+        Val::Bool(b) => {
+            if b {
+                1.0
+            } else {
+                0.0
+            }
+        }
+        Val::None => Err(blcerr!("Parsed expression returned none"))?,
+        Val::Error(e) => Err(BlcError::new(e.msg()))?,
+    };
+    Ok(x)
+}
+
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct MonthlyPayments {
     // payment per interval
-    payments: Vec<f64>,
+    payments: Vec<Expr>,
     intervals: Vec<Option<Interval>>,
 }
 impl MonthlyPayments {
-    pub fn from_intervals(payments: Vec<f64>, intervals: Vec<Interval>) -> BlcResult<Self> {
+    pub fn from_intervals(payments: Vec<Expr>, intervals: Vec<Interval>) -> BlcResult<Self> {
         if payments.len() != intervals.len() {
             Err(blcerr!("payments and intervals need to be equally long"))
         } else {
@@ -26,70 +47,25 @@ impl MonthlyPayments {
             })
         }
     }
-    pub fn from_single_payment(payment: f64) -> Self {
+    pub fn from_single_payment(payment: Expr) -> Self {
         MonthlyPayments {
             payments: vec![payment],
             intervals: vec![None],
         }
     }
-    ///
-    /// Creates a vector of payments over months. If intervals have overlap their payments will be added.
-    ///
-    /// # Arguments
-    ///
-    /// * start: start of complete time axis
-    /// * end: end of complete time axis (including)
-    /// * f: function that will be applied to each payment before collecting in result vector
-    ///
-    /// # Errors
-    ///
-    /// * Number of payments and intervals do not match
-    ///
-    pub fn expand_payments(
-        &self,
-        start: Date,
-        end: Date,
-        f: impl Fn(f64) -> f64,
-    ) -> BlcResult<Vec<f64>> {
-        self.expand_payments_iter(start, end, f)
-            .map(|it| it.collect())
-    }
-    pub fn expand_payments_iter<'a>(
-        &'a self,
-        start: Date,
-        end: Date,
-        f: impl Fn(f64) -> f64 + 'a,
-    ) -> BlcResult<impl Iterator<Item = f64> + 'a> {
-        Ok(Interval::new(start, end)?
-            .into_iter()
-            .map(move |current_date| {
-                self.payments
-                    .iter()
-                    .zip(self.intervals.iter())
-                    .filter(|(_, inter)| {
-                        if let Some(inter) = inter {
-                            inter.contains(current_date)
-                        } else {
-                            true
-                        }
-                    })
-                    .map(|(pay, _)| f(*pay))
-                    .sum::<f64>()
-            }))
-    }
-    pub fn sum_payments_total(&self, n_total_months: usize, f: impl Fn(f64) -> f64) -> f64 {
+    pub fn compute(&self, current_date: Date, vars: &[Val<i32, f64>]) -> BlcResult<f64> {
         self.payments
             .iter()
             .zip(self.intervals.iter())
-            .map(|(pay, inter)| {
-                f(*pay)
-                    * if let Some(inter) = inter {
-                        inter.len() as f64
-                    } else {
-                        n_total_months as f64
-                    }
+            .filter(|(_, inter)| {
+                if let Some(inter) = inter {
+                    inter.contains(current_date)
+                } else {
+                    true
+                }
             })
-            .sum()
+            .map(|(pay, _)| eval(pay, vars))
+            .try_fold::<f64, _, _>(0.0, |x, y| y.map(|y| x + y))
     }
 }
 pub fn yearly_return(
@@ -171,18 +147,29 @@ pub struct RebalanceData<'a> {
     /// fractions of the indices
     pub fractions: &'a [f64],
 }
-
-pub fn find_shortestlen<'a>(price_devs: &'a [&'a [f64]]) -> BlcResult<usize> {
-    price_devs
-        .iter()
-        .map(|pd| pd.len())
-        .min()
-        .ok_or(blcerr!("empty price dev"))
+impl<'a> RebalanceData<'a> {
+    fn wo_trigger(other: Self) -> Self {
+        Self {
+            trigger: RebalanceTrigger {
+                interval: None,
+                deviation: None,
+            },
+            fractions: other.fractions,
+        }
+    }
+    fn from_fractions(fractions: &'a [f64]) -> Self {
+        Self {
+            trigger: RebalanceTrigger {
+                interval: None,
+                deviation: None,
+            },
+            fractions,
+        }
+    }
 }
 
-fn balances_to_fractions(balances: &[f64]) -> Vec<f64> {
-    let total: f64 = balances.iter().sum();
-    balances.iter().map(|b| b / total).collect()
+pub fn find_shortestlen<'a>(price_devs: &'a [&'a [f64]]) -> Option<usize> {
+    price_devs.iter().map(|pd| pd.len()).min()
 }
 
 ///
@@ -201,45 +188,73 @@ fn balances_to_fractions(balances: &[f64]) -> Vec<f64> {
 ///
 pub fn compute_balance_over_months<'a>(
     price_devs: &'a [&'a [f64]],
-    initial_balances: &'a [f64],
-    monthly_payments: Option<&'a [&'a [f64]]>,
+    initial_balance: f64,
+    monthly_payments: Option<&'a MonthlyPayments>,
     rebalance_data: RebalanceData<'a>,
-) -> BlcResult<impl Iterator<Item = (f64, f64)> + 'a> {
-    let total_initial_balances: f64 = initial_balances.iter().sum();
-    let shortest_len = find_shortestlen(price_devs)?;
+    start_date: Date,
+) -> impl Iterator<Item = BlcResult<(f64, f64)>> + 'a {
+    let initial_balances = rebalance_data
+        .fractions
+        .iter()
+        .map(|fr| fr * initial_balance)
+        .collect::<Vec<f64>>();
+    let shortest_len = find_shortestlen(price_devs).unwrap_or(0);
     let balances_over_months = (0..shortest_len).zip(1..shortest_len).scan(
-        (initial_balances.to_vec(), 0.0),
+        (initial_balances, 0.0),
         move |(balances, monthly_payments_upto_now), (i_prev_month, i_month)| {
-            // update the balance for each security at the current month
-            for i_sec in 0..balances.len() {
-                let payment_this_month = monthly_payments
-                    .map(|mp| mp[i_sec][i_month - 1])
-                    .unwrap_or(0.0);
-                // we assume the monthly payment at the beggining of the month
-                let price_update = (payment_this_month + balances[i_sec])
-                    * price_devs[i_sec][i_month]
-                    / price_devs[i_sec][i_prev_month];
-                balances[i_sec] = price_update;
-                *monthly_payments_upto_now += payment_this_month;
-            }
+            // immediately called closure for error handling,
+            // since outer closure has to return Option
+            let res = (|| {
+                let fractions = &rebalance_data.fractions;
+                for i_security in 0..balances.len() {
+                    let vars = vec![
+                        Val::Float(initial_balance),
+                        Val::Float(balances.iter().sum::<f64>()),
+                    ];
+                    let payment_this_month = monthly_payments
+                        .map(|mp| mp.compute((start_date + i_month)?, &vars))
+                        .unwrap_or(Ok(0.0))?;
+                    // we assume the monthly payment at the beggining of the month
+                    let price_update = (payment_this_month * fractions[i_security]
+                        + balances[i_security])
+                        * price_devs[i_security][i_month]
+                        / price_devs[i_security][i_prev_month];
+                    balances[i_security] = price_update;
+                    *monthly_payments_upto_now += payment_this_month;
+                }
 
-            let total: f64 = balances.iter().sum();
-            if rebalance_data.is_triggered(balances, i_month) {
-                rebalance_data
-                    .fractions
-                    .iter()
-                    .zip(balances.iter_mut())
-                    .for_each(|(frac, balance)| {
-                        *balance = frac * total;
-                    });
-            }
-            Some((
-                balances.iter().sum::<f64>(),
-                total_initial_balances + *monthly_payments_upto_now,
-            ))
+                let total: f64 = balances.iter().sum();
+                if rebalance_data.is_triggered(balances, i_month) {
+                    rebalance_data
+                        .fractions
+                        .iter()
+                        .zip(balances.iter_mut())
+                        .for_each(|(frac, balance)| {
+                            *balance = frac * total;
+                        });
+                }
+                Ok((
+                    balances.iter().sum::<f64>(),
+                    initial_balance + *monthly_payments_upto_now,
+                ))
+            })();
+            Some(res)
         },
     );
-    Ok(iter::once((total_initial_balances, total_initial_balances)).chain(balances_over_months))
+    iter::once(Ok((initial_balance, initial_balance))).chain(balances_over_months)
+}
+
+pub fn unzip_balance_iter(
+    balance_over_month: impl Iterator<Item = BlcResult<(f64, f64)>>,
+) -> BlcResult<(Vec<f64>, Vec<f64>)> {
+    let mut balances = vec![];
+    let mut payments = vec![];
+    for bom in balance_over_month {
+        let (b, p) = bom?;
+        balances.push(b);
+        payments.push(p);
+    }
+    Ok((balances, payments))
 }
 
 #[allow(clippy::needless_lifetimes)]
@@ -421,74 +436,81 @@ pub struct RebalanceStatsSummary {
     pub mean_across_months_wo_reb_67_max: f64,
 }
 
-const NONE_REBALANCE_DATA: RebalanceData<'_> = RebalanceData {
-    trigger: RebalanceTrigger {
-        interval: None,
-        deviation: None,
-    },
-    fractions: &[],
-};
 pub fn rebalance_stats<'a>(
     price_devs: &'a [&'a [f64]],
-    initial_balances: &'a [f64],
-    monthly_payments: Option<&'a [&'a [f64]]>,
+    initial_balance: f64,
+    monthly_payments: Option<&'a MonthlyPayments>,
     rebalance_data: RebalanceData<'a>,
+    start_date: Date,
     min_n_months: usize,
 ) -> BlcResult<RebalanceStats> {
-    let shortest_len = find_shortestlen(price_devs)?;
+    let shortest_len = find_shortestlen(price_devs)
+        .ok_or_else(|| BlcError::new("no price-devs, no rebalance stats"))?;
     let comp_bal = |start_idx: usize, n_months: usize, data: RebalanceData<'a>| {
         let price_devs_cur: Vec<&[f64]> = price_devs
             .iter()
             .map(|pd| &pd[start_idx..(start_idx + n_months)])
             .collect();
-        let (balance, _) =
-            compute_total_balance(&price_devs_cur, initial_balances, monthly_payments, data);
-        balance
+        let (balance, _) = compute_total_balance(
+            &price_devs_cur,
+            initial_balance,
+            monthly_payments,
+            data,
+            start_date,
+        )?;
+        Ok(balance)
     };
     let records = (min_n_months..shortest_len + 1)
-        .map(|n_months| {
+        .map(|n_months| -> BlcResult<RebalanceStatRecord> {
             let last_start_month = shortest_len - n_months + 1;
             let bsum_w_reb: f64 = (0..last_start_month)
                 .map(|start_idx| comp_bal(start_idx, n_months, rebalance_data.clone()))
-                .sum();
+                .try_fold::<f64, _, _>(0.0, |x, y: Result<f64, BlcError>| y.map(|y| x + y))?;
             let bsum_wo_reb: f64 = (0..last_start_month)
-                .map(|start_idx| comp_bal(start_idx, n_months, NONE_REBALANCE_DATA))
-                .sum();
+                .map(|start_idx| {
+                    comp_bal(
+                        start_idx,
+                        n_months,
+                        RebalanceData::wo_trigger(rebalance_data.clone()),
+                    )
+                })
+                .try_fold::<f64, _, _>(0.0, |x, y| y.map(|y| x + y))?;
             let mean_w_reb = bsum_w_reb / last_start_month as f64;
             let mean_wo_reb = bsum_wo_reb / last_start_month as f64;
-            RebalanceStatRecord {
+            Ok(RebalanceStatRecord {
                 mean_w_reb,
                 mean_wo_reb,
                 n_months,
-            }
+            })
         })
-        .collect();
+        .collect::<BlcResult<Vec<_>>>()?;
     Ok(RebalanceStats { records })
 }
 
 #[derive(Deserialize, Serialize)]
 pub struct BestRebalanceTrigger {
-    pub best: (RebalanceTrigger, f64),
-    pub with_best_dev: (RebalanceTrigger, f64),
-    pub with_best_interval: (RebalanceTrigger, f64),
+    pub best: (RebalanceTrigger, f64, f64),
+    pub with_best_dev: (RebalanceTrigger, f64, f64),
+    pub with_best_interval: (RebalanceTrigger, f64, f64),
 }
 
 pub fn best_rebalance_trigger(
     price_devs: &[&[f64]],
-    initial_balances: &[f64],
-    monthly_payments: Option<&[&[f64]]>,
+    initial_balance: f64,
+    monthly_payments: Option<&MonthlyPayments>,
+    fractions: &[f64],
+    start_date: Date,
 ) -> BlcResult<BestRebalanceTrigger> {
-    let shortest_len = find_shortestlen(price_devs)?;
+    let shortest_len =
+        find_shortestlen(price_devs).ok_or_else(|| BlcError::new("empty price dev"))?;
     let months_to_test = 0..(shortest_len / 2);
     let deviations_to_test = (0..10).chain((20..50).step_by(10)).chain(iter::once(75));
-    let triggers: Vec<(RebalanceTrigger, f64)> = months_to_test
+    let triggers: Vec<(RebalanceTrigger, f64, f64)> = months_to_test
         .flat_map(move |n_months| {
-            iter::repeat(n_months)
-                .zip(deviations_to_test.clone())
-                .map(move |(n_months, d)| {
-                    let fractions = balances_to_fractions(initial_balances);
+            iter::repeat(n_months).zip(deviations_to_test.clone()).map(
+                move |(n_months, d)| -> BlcResult<_> {
                     let rebalance_data = if n_months == 0 && d == 0 {
-                        NONE_REBALANCE_DATA
+                        RebalanceData::from_fractions(fractions)
                     } else {
                         let trigger = if n_months == 0 {
                             RebalanceTrigger::from_dev(d as f64 / 100.0)
@@ -497,61 +519,63 @@ pub fn best_rebalance_trigger(
                         } else {
                             RebalanceTrigger::from_both(n_months, d as f64 / 100.0)
                         };
-                        RebalanceData {
-                            trigger,
-                            fractions: &fractions,
-                        }
+                        RebalanceData { trigger, fractions }
                     };
                     let trigger = rebalance_data.trigger;
-                    let (balance, _) = compute_total_balance(
+                    let (balance, total_payments) = compute_total_balance(
                         price_devs,
-                        initial_balances,
+                        initial_balance,
                         monthly_payments,
                         rebalance_data,
-                    );
-                    (trigger, balance)
-                })
+                        start_date,
+                    )?;
+                    Ok((trigger, balance, total_payments))
+                },
+            )
         })
-        .collect();
-    let (best_trigger, best_balance) = triggers
+        .collect::<BlcResult<Vec<_>>>()?;
+    let (best_trigger, best_balance, _) = triggers
         .iter()
-        .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+        .max_by(|(_, a, _), (_, b, _)| a.partial_cmp(b).unwrap())
         .ok_or(blcerr!("could not find best trigger"))?;
-    let (best_dev, best_dev_balance) = triggers
+    let (best_dev, best_dev_balance, _) = triggers
         .iter()
-        .filter(|(t, _)| t.interval.is_none())
-        .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+        .filter(|(t, _, _)| t.interval.is_none())
+        .max_by(|(_, a, _), (_, b, _)| a.partial_cmp(b).unwrap())
         .ok_or(blcerr!("could not find best trigger"))?;
-    let (best_interval, best_interval_balance) = triggers
+    let (best_interval, best_interval_balance, total_payments) = triggers
         .iter()
-        .filter(|(t, _)| t.deviation.is_none())
-        .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+        .filter(|(t, _, _)| t.deviation.is_none())
+        .max_by(|(_, a, _), (_, b, _)| a.partial_cmp(b).unwrap())
         .ok_or(blcerr!("could not find best trigger"))?;
 
     Ok(BestRebalanceTrigger {
-        best: (*best_trigger, *best_balance),
-        with_best_dev: (*best_dev, *best_dev_balance),
-        with_best_interval: (*best_interval, *best_interval_balance),
+        best: (*best_trigger, *best_balance, *total_payments),
+        with_best_dev: (*best_dev, *best_dev_balance, *total_payments),
+        with_best_interval: (*best_interval, *best_interval_balance, *total_payments),
     })
 }
 
 fn compute_total_balance(
     price_devs: &[&[f64]],
-    initial_balances: &[f64],
-    monthly_payments: Option<&[&[f64]]>,
+    initial_balance: f64,
+    monthly_payments: Option<&MonthlyPayments>,
     rebalance_data: RebalanceData<'_>,
-) -> (f64, f64) {
-    if let Ok(total_balance_over_months) = compute_balance_over_months(
+    start_date: Date,
+) -> BlcResult<(f64, f64)> {
+    compute_balance_over_months(
         price_devs,
-        initial_balances,
+        initial_balance,
         monthly_payments,
         rebalance_data,
-    ) {
-        total_balance_over_months.last().unwrap()
-    } else {
-        (initial_balances.iter().sum(), initial_balances.iter().sum())
-    }
+        start_date,
+    )
+    .last()
+    .unwrap()
 }
+
+#[cfg(test)]
+use exmex::parse_val;
 
 #[test]
 fn test_adapt() {
@@ -572,10 +596,10 @@ fn test_compute_balance() {
         .chain(iter::repeat(4.0).take(rebalance_interval))
         .collect::<Vec<_>>();
     let em_vals = vec![1.0; rebalance_interval * 3];
-
+    let d202005 = Date::new(2020, 5).unwrap();
     let (b, p) = compute_total_balance(
         &[&world_vals, &em_vals],
-        &[0.5, 0.5],
+        1.0,
         None,
         RebalanceData {
             trigger: RebalanceTrigger {
@@ -584,22 +608,26 @@ fn test_compute_balance() {
             },
             fractions: &[0.5, 0.5],
         },
-    );
+        d202005,
+    )
+    .unwrap();
     assert!((b - 2.25).abs() < 1e-12);
     assert!((p - 1.0).abs() < 1e-12);
 
     let (b, p) = compute_total_balance(
         &[&world_vals, &em_vals],
-        &[7.0, 3.0],
+        10.0,
         None,
-        NONE_REBALANCE_DATA,
-    );
+        RebalanceData::from_fractions(&[0.7, 0.3]),
+        d202005,
+    )
+    .unwrap();
     assert!((b - 31.0).abs() < 1e-12);
     assert!((p - 10.0).abs() < 1e-12);
 
     let (x, p) = compute_total_balance(
         &[&world_vals, &em_vals],
-        &[0.7, 0.3],
+        1.0,
         None,
         RebalanceData {
             trigger: RebalanceTrigger {
@@ -608,13 +636,15 @@ fn test_compute_balance() {
             },
             fractions: &[0.7, 0.3],
         },
-    );
+        d202005,
+    )
+    .unwrap();
     assert!((x - 2.89).abs() < 1e-12);
     assert!((p - 1.0).abs() < 1e-12);
 
     let (x, p) = compute_total_balance(
         &[&world_vals, &em_vals],
-        &[1.0, 0.0],
+        1.0,
         None,
         RebalanceData {
             trigger: RebalanceTrigger {
@@ -623,7 +653,9 @@ fn test_compute_balance() {
             },
             fractions: &[1.0, 0.0],
         },
-    );
+        d202005,
+    )
+    .unwrap();
     assert!((x - 4.0).abs() < 1e-12);
     assert!((p - 1.0).abs() < 1e-12);
 
@@ -631,7 +663,7 @@ fn test_compute_balance() {
     let em_vals = vec![1.0; 24];
     let (x, p) = compute_total_balance(
         &[&world_vals, &em_vals],
-        &[0.7, 0.3],
+        1.0,
         None,
         RebalanceData {
             trigger: RebalanceTrigger {
@@ -640,7 +672,9 @@ fn test_compute_balance() {
             },
             fractions: &[0.7, 0.3],
         },
-    );
+        d202005,
+    )
+    .unwrap();
     assert!((x - 1.0).abs() < 1e-12);
     assert!((p - 1.0).abs() < 1e-12);
 
@@ -654,7 +688,7 @@ fn test_compute_balance() {
         .collect::<Vec<_>>();
     let (x, p) = compute_total_balance(
         &[&world_vals, &em_vals],
-        &[0.7, 0.3],
+        1.0,
         None,
         RebalanceData {
             trigger: RebalanceTrigger {
@@ -663,39 +697,51 @@ fn test_compute_balance() {
             },
             fractions: &[0.7, 0.3],
         },
-    );
+        d202005,
+    )
+    .unwrap();
     assert!((x - 1.1).abs() < 1e-12);
     assert!((p - 1.0).abs() < 1e-12);
 }
 
 #[test]
 fn test_compound() {
+    let d202005 = Date::new(2020, 5).unwrap();
     let compound_interest: Vec<f64> = random_walk(5.0, true, 0.0, 12, 240, &[]).unwrap();
-    let (b, p) =
-        compute_total_balance(&[&compound_interest], &[10000.0], None, NONE_REBALANCE_DATA);
+    let (b, p) = compute_total_balance(
+        &[&compound_interest],
+        10000.0,
+        None,
+        RebalanceData::from_fractions(&[1.0]),
+        d202005,
+    )
+    .unwrap();
     assert!((b - 26532.98).abs() < 1e-2);
     assert!((p - 10000.0).abs() < 1e-12);
 
     let compound_interest: Vec<f64> = random_walk(5.0, true, 0.0, 12, 360, &[]).unwrap();
-    let ci_len = compound_interest.len();
-    let monthly_payments: Vec<f64> = vec![1000.0; ci_len - 1];
+    let monthly_payments = MonthlyPayments::from_single_payment(parse_val("1000.0").unwrap());
     let (b, _) = compute_total_balance(
         &[&compound_interest],
-        &[10000.0],
-        Some(&[&monthly_payments]),
-        NONE_REBALANCE_DATA,
-    );
+        10000.0,
+        Some(&monthly_payments),
+        RebalanceData::from_fractions(&[1.0]),
+        d202005,
+    )
+    .unwrap();
     println!("{b}");
     assert!((b - 861917.27).abs() < 1e-2);
 }
 
 #[test]
 fn test_rebalance() {
+    let d202005 = Date::new(2020, 5).unwrap();
     let v1s = vec![1.0, 1.0, 0.0];
     let v2s = vec![1.0, 1.0, 1.0];
-    let (x, _): (Vec<_>, Vec<_>) = compute_balance_over_months(
-        &[&v1s, &v2s],
-        &[0.5, 0.5],
+    let pd = [v1s.as_slice(), v2s.as_slice()];
+    let bom = compute_balance_over_months(
+        &pd,
+        1.0,
         None,
         RebalanceData {
             trigger: RebalanceTrigger {
@@ -704,16 +750,17 @@ fn test_rebalance() {
             },
             fractions: &[0.5, 0.5],
         },
-    )
-    .unwrap()
-    .unzip();
+        d202005,
+    );
+    let (x, _) = unzip_balance_iter(bom).unwrap();
     assert!((x[2] - 0.5).abs() < 1e-12);
 
     let v1s = vec![1.0, 1.0, 1.0];
     let v2s = vec![1.0, 0.5, 1.0];
-    let (x, _): (Vec<_>, Vec<_>) = compute_balance_over_months(
-        &[&v1s, &v2s],
-        &[0.5, 0.5],
+    let pd = [v1s.as_slice(), v2s.as_slice()];
+    let bom = compute_balance_over_months(
+        &pd,
+        1.0,
         None,
         RebalanceData {
             trigger: RebalanceTrigger {
@@ -722,29 +769,31 @@ fn test_rebalance() {
             },
             fractions: &[0.5, 0.5],
         },
-    )
-    .unwrap()
-    .unzip();
+        d202005,
+    );
+    let (x, _) = unzip_balance_iter(bom).unwrap();
     assert!((x[2] - 1.125).abs() < 1e-12);
 }
 
 #[test]
 fn test_besttrigger() {
+    let d202005 = Date::new(2020, 5).unwrap();
     let v1s = vec![1.0, 1.0, 1.0, 1.0, 0.5, 1.0];
     let v2s = vec![1.0, 1.0, 1.0, 1.0, 1.0, 1.0];
-    let (_, balance) = best_rebalance_trigger(&[&v1s, &v2s], &[0.5, 0.5], None)
+    let (_, balance, _) = best_rebalance_trigger(&[&v1s, &v2s], 1.0, None, &[0.5, 0.5], d202005)
         .unwrap()
         .best;
     assert!((balance - 1.125).abs() < 1e-12);
 }
 #[test]
 fn test_rebalancestats() {
+    let d202005 = Date::new(2020, 5).unwrap();
     let v1s = vec![1.0, 1.0, 1.0, 1.0, 0.5, 1.0];
     let v2s = vec![1.0, 1.0, 1.0, 1.0, 1.0, 1.0];
     let min_n_months = 3;
     let stats = rebalance_stats(
         &[&v1s, &v2s],
-        &[0.5, 0.5],
+        1.0,
         None,
         RebalanceData {
             trigger: RebalanceTrigger {
@@ -753,6 +802,7 @@ fn test_rebalancestats() {
             },
             fractions: &[0.5, 0.5],
         },
+        d202005,
         min_n_months,
     )
     .unwrap();

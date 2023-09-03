@@ -2,8 +2,8 @@ use crate::{
     blcerr,
     compute::{
         adapt_pricedev_to_initial_balance, best_rebalance_trigger, compute_balance_over_months,
-        rebalance_stats, BestRebalanceTrigger, MonthlyPayments, RebalanceData, RebalanceStats,
-        RebalanceTrigger,
+        rebalance_stats, unzip_balance_iter, BestRebalanceTrigger, MonthlyPayments, RebalanceData,
+        RebalanceStats, RebalanceTrigger,
     },
     core_types::BlcResult,
     date::{fill_between, Date},
@@ -256,7 +256,7 @@ impl Chart {
     }
 }
 
-type ComputeData<'a> = (Vec<&'a [f64]>, Vec<f64>, Vec<Vec<f64>>);
+type ComputeData<'a> = Vec<&'a [f64]>;
 
 #[derive(Default, Clone, Debug, Serialize, Deserialize)]
 pub struct TmpChart {
@@ -333,6 +333,9 @@ impl Charts {
 
     pub fn total_balance_over_month(&self) -> Option<&Chart> {
         self.total_balance_over_month.as_ref()
+    }
+    pub fn total_payments_over_month(&self) -> Option<&Chart> {
+        self.total_payments_over_month.as_ref()
     }
 
     pub fn add_tmp(&mut self, chart: Option<TmpChart>) {
@@ -411,29 +414,13 @@ impl Charts {
         recompute
     }
 
-    fn gather_compute_data(
-        &self,
-        initial_balance: f64,
-        monthly_payments: &MonthlyPayments,
-        start_date: Date,
-        end_date: Date,
-    ) -> BlcResult<ComputeData<'_>> {
+    fn gather_compute_data(&self, start_date: Date, end_date: Date) -> BlcResult<ComputeData<'_>> {
         let price_devs = self
             .persisted
             .iter()
             .map(|c| c.sliced_values(start_date, end_date))
             .collect::<BlcResult<Vec<_>>>()?;
-        let initial_balances = self
-            .fractions
-            .iter()
-            .map(|fr| fr * initial_balance)
-            .collect::<Vec<_>>();
-        let monthly_payments = self
-            .fractions
-            .iter()
-            .map(|fr| monthly_payments.expand_payments(start_date, end_date, |x| x * fr))
-            .collect::<BlcResult<Vec<_>>>()?;
-        Ok((price_devs, initial_balances, monthly_payments))
+        Ok(price_devs)
     }
 
     pub fn find_bestrebalancetrigger(
@@ -442,13 +429,14 @@ impl Charts {
         monthly_payments: &MonthlyPayments,
     ) -> BlcResult<BestRebalanceTrigger> {
         let (start_date, end_date) = self.start_end_date(false)?;
-        let (price_devs, initial_balances, monthly_payments) =
-            self.gather_compute_data(initial_balance, monthly_payments, start_date, end_date)?;
-        let monthly_payments_refs = monthly_payments
-            .iter()
-            .map(|mp| &mp[..])
-            .collect::<Vec<_>>();
-        best_rebalance_trigger(&price_devs, &initial_balances, Some(&monthly_payments_refs))
+        let price_devs = self.gather_compute_data(start_date, end_date)?;
+        best_rebalance_trigger(
+            &price_devs,
+            initial_balance,
+            Some(monthly_payments),
+            &self.fractions,
+            start_date,
+        )
     }
     pub fn compute_rebalancestats(
         &self,
@@ -456,21 +444,18 @@ impl Charts {
         monthly_payments: &MonthlyPayments,
         rebalance_trigger: RebalanceTrigger,
     ) -> BlcResult<RebalanceStats> {
+        let rebalance_data = RebalanceData {
+            trigger: rebalance_trigger,
+            fractions: &self.fractions,
+        };
         let (start_date, end_date) = self.start_end_date(false)?;
-        let (price_devs, initial_balances, monthly_payments) =
-            self.gather_compute_data(initial_balance, monthly_payments, start_date, end_date)?;
-        let monthly_payments_refs = monthly_payments
-            .iter()
-            .map(|mp| &mp[..])
-            .collect::<Vec<_>>();
+        let price_devs = self.gather_compute_data(start_date, end_date)?;
         rebalance_stats(
             &price_devs,
-            &initial_balances,
-            Some(&monthly_payments_refs),
-            RebalanceData {
-                trigger: rebalance_trigger,
-                fractions: &self.fractions,
-            },
+            initial_balance,
+            Some(monthly_payments),
+            rebalance_data,
+            start_date,
             10,
         )
     }
@@ -482,22 +467,18 @@ impl Charts {
         rebalance_trigger: RebalanceTrigger,
     ) -> BlcResult<()> {
         let (start_date, end_date) = self.start_end_date(false)?;
-        let (price_devs, initial_balances, monthly_payments) =
-            self.gather_compute_data(initial_balance, monthly_payments, start_date, end_date)?;
-        let monthly_payments_refs = monthly_payments
-            .iter()
-            .map(|mp| &mp[..])
-            .collect::<Vec<_>>();
+        let price_devs = self.gather_compute_data(start_date, end_date)?;
         let balance_over_month = compute_balance_over_months(
             &price_devs,
-            &initial_balances,
-            Some(&monthly_payments_refs),
+            initial_balance,
+            Some(monthly_payments),
             RebalanceData {
                 trigger: rebalance_trigger,
                 fractions: &self.fractions,
             },
-        )?;
-        let (balances, payments): (Vec<f64>, Vec<f64>) = balance_over_month.unzip();
+            start_date,
+        );
+        let (balances, payments) = unzip_balance_iter(balance_over_month)?;
         let dates = self.persisted[0]
             .sliced_dates(start_date, end_date)?
             .to_vec();
@@ -642,7 +623,7 @@ impl Display for Charts {
 }
 
 #[cfg(test)]
-use crate::date::Interval;
+use {crate::date::Interval, exmex::parse_val};
 
 #[test]
 fn test_add_fraction() {
@@ -725,14 +706,11 @@ fn test_monthly_payments() {
     let start = Date::from_str("2000/01").unwrap();
     let end = Date::from_str("2000/12").unwrap();
 
-    let mp = MonthlyPayments::from_single_payment(100.0);
-    let expanded = mp.expand_payments(start, end, |x| x).unwrap();
-    assert_eq!(expanded, vec![100.0; 12]);
+    let expr = parse_val("100.0").unwrap();
+    let mp = MonthlyPayments::from_single_payment(expr.clone());
+    assert!((100.0 - mp.compute(Date::new(1999, 12).unwrap(), &[]).unwrap()).abs() < 1e-8);
 
-    let mp = MonthlyPayments::from_intervals(vec![100.0], vec![Interval::new(start, end).unwrap()])
+    let mp = MonthlyPayments::from_intervals(vec![expr], vec![Interval::new(start, end).unwrap()])
         .unwrap();
-    let expanded = mp.expand_payments(start, end, |x| x).unwrap();
-    assert_eq!(expanded, vec![100.0; 12]);
-    let x = mp.sum_payments_total(12, |x| x);
-    assert_eq!(x, 1200.0);
+    assert!((mp.compute(Date::new(1999, 12).unwrap(), &[]).unwrap()).abs() < 1e-8);
 }
