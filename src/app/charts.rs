@@ -392,11 +392,16 @@ impl Charts {
         for idx in chart_inds {
             ui.label(self.persisted[idx].name());
             let slider = ui.add(egui::Slider::new(&mut self.fractions[idx], 0.0..=1.0));
-            if ui.button("deactivate").clicked() {
-                self.fractions[idx] = 0.0;
-                self.fractions =
-                    normalize_fractions(mem::take(&mut self.fractions), idx, &self.fractions_fixed);
-                recompute = true;
+            if self.fractions.len() > 1 {
+                if ui.button("deactivate").clicked() {
+                    self.fractions[idx] = 0.0;
+                    self.fractions = normalize_fractions(
+                        mem::take(&mut self.fractions),
+                        idx,
+                        &self.fractions_fixed,
+                    );
+                    recompute = true;
+                }
             }
             if slider.changed() {
                 self.fractions =
