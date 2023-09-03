@@ -32,7 +32,8 @@ fn eval(expr: &Expr, vars: &[Val<i32, f64>]) -> BlcResult<f64> {
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct MonthlyPayments {
-    // payment per interval
+    // payment per interval, the expression can evaluate the variables current_balance and
+    // initial_balance.
     payments: Vec<Expr>,
     intervals: Vec<Option<Interval>>,
 }
@@ -53,6 +54,7 @@ impl MonthlyPayments {
             intervals: vec![None],
         }
     }
+    /// Computes all payments of the current_date
     pub fn compute(&self, current_date: Date, vars: &[Val<i32, f64>]) -> BlcResult<f64> {
         self.payments
             .iter()
@@ -176,13 +178,12 @@ pub fn find_shortestlen<'a>(price_devs: &'a [&'a [f64]]) -> Option<usize> {
 /// Compute the balance given initial values and price developments of securities
 ///
 /// Arguments
-/// * `price_devs` - developments of the individual securities (e.g., stock prices, index prices, ...)
-///                  2d-vector, first axis addresses the security, second axis is the price
-/// * `initial_balances` - initial balance per security (e.g., stock price, index price, ...)
-/// * `monthly_payments - monthly payments for each security, e.g., from a savings plan
-///                       index 0 here corresponds to index 1 in price dev, since the month-0-payment
-///                       is covered by `initial_balances`
+/// * `price_devs`         - developments of the individual securities (e.g., stock prices, index prices, ...)
+///                          2d-vector, first axis addresses the security, second axis is the price
+/// * `initial_balance`    - total amount of initial investment
+/// * `monthly_payments    - monthly payments for each security, e.g., from a savings plan
 /// * `rebalance_interval` - pass if indices are rebalanced
+/// * `start_date`         - needed to check if which monthly payments are due
 ///
 /// Returns an iterator that yields total balance and the sum of all payments per months up to each month
 ///
@@ -208,8 +209,8 @@ pub fn compute_balance_over_months<'a>(
                 let fractions = &rebalance_data.fractions;
                 for i_security in 0..balances.len() {
                     let vars = vec![
-                        Val::Float(initial_balance),
                         Val::Float(balances.iter().sum::<f64>()),
+                        Val::Float(initial_balance),
                     ];
                     let payment_this_month = monthly_payments
                         .map(|mp| mp.compute((start_date + i_month)?, &vars))
@@ -832,4 +833,32 @@ fn test_rebalancestats() {
     let stats_summary = stats.mean_across_nmonths().unwrap();
     assert!((stats_summary.mean_across_months_w_reb - 3.0).abs() < 1e-12);
     assert!((stats_summary.mean_across_months_wo_reb - 1.5).abs() < 1e-12);
+}
+
+#[test]
+fn test_monthly() {
+    let d1 = Date::new(2000, 11).unwrap();
+    let mp = MonthlyPayments::from_single_payment(parse_val("cb / ib").unwrap());
+    let vars = &[Val::Float(2.0), Val::Float(2.9)];
+    let res = mp.compute(d1, vars).unwrap();
+    assert!((res - 2.0 / 2.9).abs() < 1e-9);
+    let expr1 = parse_val("1.0 / cb").unwrap();
+    let expr2 = parse_val("7.0").unwrap();
+    let payments = vec![expr1, expr2];
+    let d2 = Date::new(2013, 11).unwrap();
+    let d3 = Date::new(2012, 11).unwrap();
+    let d4 = Date::new(2014, 11).unwrap();
+    let intervals = vec![
+        Interval::new(d1, d2).unwrap(),
+        Interval::new(d3, d4).unwrap(),
+    ];
+    let mp = MonthlyPayments::from_intervals(payments, intervals).unwrap();
+    let res = mp.compute(Date::new(2000, 10).unwrap(), vars).unwrap();
+    assert!(res.abs() < 1e-9);
+    let res = mp.compute(Date::new(2001, 10).unwrap(), vars).unwrap();
+    assert!((res - 0.5).abs() < 1e-9);
+    let res = mp.compute(Date::new(2007, 10).unwrap(), vars).unwrap();
+    assert!((res - 0.5).abs() < 1e-9);
+    let res = mp.compute(Date::new(2013, 10).unwrap(), vars).unwrap();
+    assert!((res - 7.5).abs() < 1e-9);
 }
