@@ -108,14 +108,13 @@ fn space_sep_1000(s: String) -> String {
         (start_idx..integral_part.len())
             .step_by(3)
             .map(|idx| {
-                let s = if integral_part.len() > idx + 3 {
+                if integral_part.len() > idx + 3 {
                     &integral_part[idx..idx + 3]
                 } else {
                     &integral_part[idx..]
-                };
-                s
+                }
             })
-            .fold(format!("{}", &integral_part[..start_idx]), |s1, s2| {
+            .fold(integral_part[..start_idx].to_string(), |s1, s2| {
                 format!("{s1} {s2}")
             })
     } else {

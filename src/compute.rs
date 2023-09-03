@@ -70,11 +70,7 @@ impl MonthlyPayments {
             .try_fold::<f64, _, _>(0.0, |x, y| y.map(|y| x + y))
     }
 }
-pub fn yearly_return(
-    total_payments: f64,
-    n_months: usize,
-    final_balance: f64,
-) -> (f64, f64) {
+pub fn yearly_return(total_payments: f64, n_months: usize, final_balance: f64) -> (f64, f64) {
     let total_yield = final_balance / total_payments;
     if total_payments < 0.0 {
         (f64::NAN, total_yield)
@@ -744,7 +740,7 @@ fn test_compound() {
     .unwrap();
     println!("total p {total_p}");
     assert!((total_p - 10000.0).abs() < 1e-12);
-    
+
     let compound_interest: Vec<f64> = random_walk(5.0, true, 1.0, 12, 36, &[]).unwrap();
     let monthly_payments = MonthlyPayments::from_single_payment(parse_val("1000.0").unwrap());
     let (_, total_p) = compute_total_balance(

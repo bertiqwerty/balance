@@ -283,11 +283,7 @@ pub struct FinalBalance {
     pub total_payments: f64,
 }
 impl FinalBalance {
-    pub fn from_chart(
-        price_dev: &Chart,
-        payments: &Chart,
-        n_months: usize,
-    ) -> BlcResult<Self> {
+    pub fn from_chart(price_dev: &Chart, payments: &Chart, n_months: usize) -> BlcResult<Self> {
         if let (Some(final_balance), Some(total_payments)) = (
             price_dev.values().iter().last().copied(),
             payments.values().iter().last().copied(),
