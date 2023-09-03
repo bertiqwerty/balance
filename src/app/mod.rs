@@ -98,6 +98,40 @@ fn heading(ui: &mut Ui, s: &str) -> Response {
     ui.heading(RichText::new(s).strong().size(30.0))
 }
 
+fn space_sep_1000(s: String) -> String {
+    let mut s_iter = s.split('.');
+    let integral_part = s_iter.next().unwrap();
+    let fractional_part = s_iter.next();
+    let integral_part = integral_part;
+    let integral_part = if integral_part.len() > 4 {
+        let start_idx = integral_part.len() % 3;
+        (start_idx..integral_part.len())
+            .step_by(3)
+            .map(|idx| {
+                let s = if integral_part.len() > idx + 3 {
+                    &integral_part[idx..idx + 3]
+                } else {
+                    &integral_part[idx..]
+                };
+                s
+            })
+            .fold(format!("{}", &integral_part[..start_idx]), |s1, s2| {
+                format!("{s1} {s2}")
+            })
+    } else {
+        integral_part.to_string()
+    };
+    if let Some(fp) = fractional_part {
+        format!("{integral_part}.{fp}")
+    } else {
+        integral_part
+    }
+}
+
+fn format_num(x: f64) -> String {
+    space_sep_1000(format!("{x:0.2}"))
+}
+
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[derive(Deserialize, Serialize, Default)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
@@ -303,8 +337,7 @@ impl<'a> BalanceApp<'a> {
                     self.charts.n_months_persisted(),
                 ) {
                     (Some(tbom), Some(tp), Ok(n_months)) => {
-                        let final_balance =
-                            FinalBalance::from_chart(tbom, tp, *initial_balance, n_months);
+                        let final_balance = FinalBalance::from_chart(tbom, tp, n_months);
                         match final_balance {
                             Ok(final_balance) => {
                                 self.final_balance = Some(final_balance);
@@ -741,19 +774,24 @@ impl<'a> eframe::App for BalanceApp<'a> {
                             final_balance,
                             yearly_return_perc,
                             total_yield,
+                            total_payments,
                         } = final_balance;
                         ui.label("Final balance");
-                        ui.label(RichText::new(format!("{final_balance:0.2}")).strong());
+                        ui.label(RichText::new(format_num(*final_balance)).strong());
                         ui.label("Yearly reaturn [%]");
-                        ui.label(RichText::new(format!("{yearly_return_perc:0.2}")).strong());
+                        ui.label(RichText::new(format_num(*yearly_return_perc)).strong());
                         ui.label("Factor");
-                        ui.label(RichText::new(format!("{total_yield:0.2}")).strong());
+                        ui.label(RichText::new(format_num(*total_yield)).strong());
+                        ui.label("Total payments");
+                        ui.label(RichText::new(format_num(*total_payments)).strong());
                     } else {
                         ui.label("Final balance");
                         ui.label("-");
                         ui.label("Yearly return [%]");
                         ui.label("-");
                         ui.label("Factor");
+                        ui.label("-");
+                        ui.label("Total payments");
                         ui.label("-");
                     }
                 });
@@ -823,19 +861,14 @@ impl<'a> eframe::App for BalanceApp<'a> {
                         ui.label("interval [#month]");
                         ui.label("deviation threshold [%]");
                         ui.end_row();
-                        let initial_payment = self.payment.initial_balance.1;
                         let toshow = iter::once(best_trigger.best)
                             .chain(iter::once(best_trigger.with_best_dev))
                             .chain(iter::once(best_trigger.with_best_interval));
                         for (trigger, balance, total_payments) in toshow {
                             ui.label(format!("{balance:0.2}"));
                             if let Ok(n_months) = self.charts.n_months_persisted() {
-                                let (yearly_return_perc, _) = yearly_return(
-                                    initial_payment,
-                                    total_payments,
-                                    n_months,
-                                    balance,
-                                );
+                                let (yearly_return_perc, _) =
+                                    yearly_return(total_payments, n_months, balance);
                                 ui.label(format!("{yearly_return_perc:0.2}"));
                             } else {
                                 ui.label("-");
@@ -964,4 +997,14 @@ impl<'a> eframe::App for BalanceApp<'a> {
             });
         });
     }
+}
+
+#[test]
+fn test_1000() {
+    assert_eq!(&space_sep_1000("1000".to_string()), "1000");
+    assert_eq!(&space_sep_1000("432".to_string()), "432");
+    assert_eq!(&space_sep_1000("92432".to_string()), "92 432");
+    assert_eq!(&space_sep_1000("2192432".to_string()), "2 192 432");
+    assert_eq!(&space_sep_1000("92432.65".to_string()), "92 432.65");
+    assert_eq!(&space_sep_1000("92432.659".to_string()), "92 432.659");
 }

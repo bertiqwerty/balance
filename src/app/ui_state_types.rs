@@ -280,24 +280,26 @@ pub struct FinalBalance {
     pub final_balance: f64,
     pub yearly_return_perc: f64,
     pub total_yield: f64,
+    pub total_payments: f64,
 }
 impl FinalBalance {
     pub fn from_chart(
         price_dev: &Chart,
         payments: &Chart,
-        initial_payment: f64,
         n_months: usize,
     ) -> BlcResult<Self> {
-        if let (Some(final_balance), Some(total_payment)) = (
+        if let (Some(final_balance), Some(total_payments)) = (
             price_dev.values().iter().last().copied(),
             payments.values().iter().last().copied(),
         ) {
             let (yearly_return_perc, total_yield) =
-                yearly_return(initial_payment, total_payment, n_months, final_balance);
+                yearly_return(total_payments, n_months, final_balance);
+            println!("payments {total_payments}");
             Ok(FinalBalance {
                 final_balance,
                 yearly_return_perc,
                 total_yield,
+                total_payments,
             })
         } else {
             Err(blcerr!("cannot compute final balance from empty chart"))

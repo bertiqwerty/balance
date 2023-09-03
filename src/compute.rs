@@ -71,14 +71,12 @@ impl MonthlyPayments {
     }
 }
 pub fn yearly_return(
-    initial_payment: f64,
-    total_monthly: f64,
+    total_payments: f64,
     n_months: usize,
     final_balance: f64,
 ) -> (f64, f64) {
-    let total_payments = initial_payment + total_monthly;
     let total_yield = final_balance / total_payments;
-    if total_monthly < 0.0 {
+    if total_payments < 0.0 {
         (f64::NAN, total_yield)
     } else {
         let yearly_return_perc =
@@ -709,10 +707,11 @@ fn test_compute_balance() {
 fn test_compound() {
     let d202005 = Date::new(2020, 5).unwrap();
     let compound_interest: Vec<f64> = random_walk(5.0, true, 0.0, 12, 240, &[]).unwrap();
+    let mp = MonthlyPayments::from_single_payment(parse_val("0").unwrap());
     let (b, p) = compute_total_balance(
         &[&compound_interest],
         10000.0,
-        None,
+        Some(&mp),
         RebalanceData::from_fractions(&[1.0]),
         d202005,
     )
@@ -732,6 +731,32 @@ fn test_compound() {
     .unwrap();
     println!("{b}");
     assert!((b - 861917.27).abs() < 1e-2);
+
+    let compound_interest: Vec<f64> = random_walk(5.0, true, 1.0, 12, 137, &[]).unwrap();
+    let monthly_payments = MonthlyPayments::from_single_payment(parse_val("0.0").unwrap());
+    let (_, total_p) = compute_total_balance(
+        &[&compound_interest],
+        10000.0,
+        Some(&monthly_payments),
+        RebalanceData::from_fractions(&[1.0]),
+        d202005,
+    )
+    .unwrap();
+    println!("total p {total_p}");
+    assert!((total_p - 10000.0).abs() < 1e-12);
+    
+    let compound_interest: Vec<f64> = random_walk(5.0, true, 1.0, 12, 36, &[]).unwrap();
+    let monthly_payments = MonthlyPayments::from_single_payment(parse_val("1000.0").unwrap());
+    let (_, total_p) = compute_total_balance(
+        &[&compound_interest],
+        10000.0,
+        Some(&monthly_payments),
+        RebalanceData::from_fractions(&[1.0]),
+        d202005,
+    )
+    .unwrap();
+    println!("total p {total_p}");
+    assert!((total_p - 46000.0).abs() < 1e-12);
 }
 
 #[test]
