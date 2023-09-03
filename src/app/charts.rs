@@ -389,39 +389,52 @@ impl Charts {
         let chart_inds = 0..(self.persisted.len());
         let mut remove_idx = None;
         let mut recompute = false;
-        for idx in chart_inds {
-            ui.label(self.persisted[idx].name());
-            let slider = ui.add(egui::Slider::new(&mut self.fractions[idx], 0.0..=1.0));
-            if self.fractions.len() > 1 {
-                if ui.button("deactivate").clicked() {
-                    self.fractions[idx] = 0.0;
-                    self.fractions = normalize_fractions(
-                        mem::take(&mut self.fractions),
-                        idx,
-                        &self.fractions_fixed,
-                    );
-                    recompute = true;
-                }
-            }
-            if slider.changed() {
-                self.fractions =
-                    normalize_fractions(mem::take(&mut self.fractions), idx, &self.fractions_fixed);
-            }
+        egui::CollapsingHeader::new("Price developments for balance computation")
+            .default_open(true)
+            .show(ui, |ui| {
+                egui::Grid::new("grid-persistend-charts").show(ui, |ui| {
+                    for idx in chart_inds {
+                        ui.label(self.persisted[idx].name());
+                        if self.fractions.len() > 1 {
+                            let slider =
+                                ui.add(egui::Slider::new(&mut self.fractions[idx], 0.0..=1.0));
+                            if ui.button("deactivate").clicked() {
+                                self.fractions[idx] = 0.0;
+                                self.fractions = normalize_fractions(
+                                    mem::take(&mut self.fractions),
+                                    idx,
+                                    &self.fractions_fixed,
+                                );
+                                recompute = true;
+                            }
 
-            if slider.drag_released() {
-                recompute = true;
-            }
+                            if slider.changed() {
+                                self.fractions = normalize_fractions(
+                                    mem::take(&mut self.fractions),
+                                    idx,
+                                    &self.fractions_fixed,
+                                );
+                            }
 
-            ui.checkbox(&mut self.fractions_fixed[idx], "fix");
-            if ui.button("x").clicked() {
-                remove_idx = Some(idx);
-                recompute = true;
-            }
-            ui.end_row();
-        }
-        if let Some(idx) = remove_idx {
-            self.remove(idx);
-        }
+                            if slider.drag_released() {
+                                recompute = true;
+                            }
+
+                            if self.fractions.len() > 2 {
+                                ui.checkbox(&mut self.fractions_fixed[idx], "fix");
+                            }
+                        }
+                        if ui.button("x").clicked() {
+                            remove_idx = Some(idx);
+                            recompute = true;
+                        }
+                        ui.end_row();
+                    }
+                    if let Some(idx) = remove_idx {
+                        self.remove(idx);
+                    }
+                });
+            });
         recompute
     }
 

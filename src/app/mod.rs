@@ -616,7 +616,10 @@ impl<'a> eframe::App for BalanceApp<'a> {
                         });
                         ui.horizontal(|ui| {
                             ui.label("data from");
-                            ui.hyperlink("https://curvo.eu/backtest/")
+                            ui.hyperlink_to(
+                                "Backtest by Curvo",
+                                "https://curvo.eu/backtest/faq#is-it-free",
+                            );
                         });
                     },
                 );
@@ -628,6 +631,10 @@ impl<'a> eframe::App for BalanceApp<'a> {
                     self.best_rebalance_trigger = None;
                     self.charts.persist_tmp();
                     self.recompute_balance();
+                }
+                ui.separator();
+                if !self.charts.persisted.is_empty() && self.charts.fraction_sliders(ui) {
+                    recompute!(self);
                 }
                 ui.separator();
                 heading2(ui, "2. Set Investments");
@@ -758,13 +765,6 @@ impl<'a> eframe::App for BalanceApp<'a> {
                         }
                     });
                 });
-                if !self.charts.persisted.is_empty() {
-                    egui::Grid::new("grid-persistend-charts").show(ui, |ui| {
-                        if self.charts.fraction_sliders(ui) {
-                            recompute!(self);
-                        }
-                    });
-                }
                 ui.separator();
                 heading2(ui, "3. Investigate Results of Balance Computation");
                 egui::Grid::new("balance-number-results").show(ui, |ui| {
