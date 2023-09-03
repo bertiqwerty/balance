@@ -290,7 +290,6 @@ impl FinalBalance {
         ) {
             let (yearly_return_perc, total_yield) =
                 yearly_return(total_payments, n_months, final_balance);
-            println!("payments {total_payments}");
             Ok(FinalBalance {
                 final_balance,
                 yearly_return_perc,

@@ -197,43 +197,43 @@ pub fn compute_balance_over_months<'a>(
     let balances_over_months = (0..shortest_len).zip(1..shortest_len).scan(
         (initial_balances, 0.0),
         move |(balances, monthly_payments_upto_now), (i_prev_month, i_month)| {
+            let vars = vec![
+                Val::Float(balances.iter().sum::<f64>()),
+                Val::Float(initial_balance),
+            ];
+            let payment_this_month = monthly_payments
+                .map(|mp| mp.compute((start_date + i_month)?, &vars))
+                .unwrap_or(Ok(0.0))
+                .unwrap_or(0.0);
+
             // immediately called closure for error handling,
             // since outer closure has to return Option
-            let res = (|| {
-                let fractions = &rebalance_data.fractions;
-                for i_security in 0..balances.len() {
-                    let vars = vec![
-                        Val::Float(balances.iter().sum::<f64>()),
-                        Val::Float(initial_balance),
-                    ];
-                    let payment_this_month = monthly_payments
-                        .map(|mp| mp.compute((start_date + i_month)?, &vars))
-                        .unwrap_or(Ok(0.0))?;
-                    // we assume the monthly payment at the beggining of the month
-                    let price_update = (payment_this_month * fractions[i_security]
-                        + balances[i_security])
-                        * price_devs[i_security][i_month]
-                        / price_devs[i_security][i_prev_month];
-                    balances[i_security] = price_update;
-                    *monthly_payments_upto_now += payment_this_month;
-                }
+            let fractions = &rebalance_data.fractions;
+            for i_security in 0..balances.len() {
+                let payment_this_monthsec = payment_this_month * fractions[i_security];
+                // we assume the monthly payment at the beggining of the month
+                let price_update = (payment_this_monthsec * fractions[i_security]
+                    + balances[i_security])
+                    * price_devs[i_security][i_month]
+                    / price_devs[i_security][i_prev_month];
+                balances[i_security] = price_update;
+                *monthly_payments_upto_now += payment_this_monthsec;
+            }
 
-                let total: f64 = balances.iter().sum();
-                if rebalance_data.is_triggered(balances, i_month) {
-                    rebalance_data
-                        .fractions
-                        .iter()
-                        .zip(balances.iter_mut())
-                        .for_each(|(frac, balance)| {
-                            *balance = frac * total;
-                        });
-                }
-                Ok((
-                    balances.iter().sum::<f64>(),
-                    initial_balance + *monthly_payments_upto_now,
-                ))
-            })();
-            Some(res)
+            let total: f64 = balances.iter().sum();
+            if rebalance_data.is_triggered(balances, i_month) {
+                rebalance_data
+                    .fractions
+                    .iter()
+                    .zip(balances.iter_mut())
+                    .for_each(|(frac, balance)| {
+                        *balance = frac * total;
+                    });
+            }
+            Some(Ok((
+                balances.iter().sum::<f64>(),
+                initial_balance + *monthly_payments_upto_now,
+            )))
         },
     );
     iter::once(Ok((initial_balance, initial_balance))).chain(balances_over_months)
