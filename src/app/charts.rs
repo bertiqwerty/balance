@@ -383,6 +383,12 @@ impl Charts {
         let fr_removed = self.fractions.remove(idx);
         let new_fractions = redestribute_fractions(mem::take(&mut self.fractions), fr_removed);
         self.fractions = new_fractions;
+        if self.persisted.len() < 3 {
+            // no slider is fixed in case of two or less
+            for b in self.fractions_fixed.iter_mut() {
+                *b = false;
+            }
+        }
     }
 
     pub fn fraction_sliders(&mut self, ui: &mut Ui) -> bool {
