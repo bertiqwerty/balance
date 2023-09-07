@@ -422,7 +422,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                     ui.label(make_text(status_msg.as_str()));
                 } else if self.charts.persisted.is_empty() {
                     ui.label(make_text(
-                        "Add simulated or historical charts to compute your portfolio value",
+                        "Add simulated or historical charts to compute your portfolio development",
                     ));
                 } else {
                     ui.label(make_text("Portfolio value computation ready"));
