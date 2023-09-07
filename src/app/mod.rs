@@ -422,7 +422,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                     ui.label(make_text(status_msg.as_str()));
                 } else if self.charts.persisted.is_empty() {
                     ui.label(make_text(
-                        "Add simulated or historical charts to compute your balance",
+                        "Add simulated or historical charts to compute your portfolio value",
                     ));
                 } else {
                     ui.label(make_text("Portfolio value computation ready"));
@@ -766,7 +766,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                     });
                 });
                 ui.separator();
-                heading2(ui, "3. Investigate Results of Balance Computation");
+                heading2(ui, "3. Investigate Results");
                 egui::Grid::new("balance-number-results").show(ui, |ui| {
                     if let Some(final_balance) = &self.final_balance {
                         let FinalBalance {
