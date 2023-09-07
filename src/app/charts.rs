@@ -26,11 +26,11 @@ fn start_end_date<'a>(charts: impl Iterator<Item = &'a Chart> + Clone) -> BlcRes
         .clone()
         .map(|c| c.dates.first().unwrap_or(min_date))
         .max()
-        .ok_or_else(|| blcerr!("Add simulated or historical charts to compute balances"))?;
+        .ok_or_else(|| blcerr!("Add simulated or historical charts to compute your balance"))?;
     let end_date = *charts
         .map(|c| c.dates.iter().last().unwrap_or(max_date))
         .min()
-        .ok_or_else(|| blcerr!("Add simulated or historical charts to compute balances"))?;
+        .ok_or_else(|| blcerr!("Add simulated or historical charts to compute your balance"))?;
     if end_date <= start_date {
         Err(blcerr!("start date needs to be strictly before enddate"))
     } else {
@@ -512,7 +512,7 @@ impl Charts {
         let dates = self.persisted[0]
             .sliced_dates(start_date, end_date)?
             .to_vec();
-        let b_chart = Chart::new("total balances".to_string(), dates.clone(), balances);
+        let b_chart = Chart::new("portfolio value".to_string(), dates.clone(), balances);
         let p_chart = Chart::new("total payments".to_string(), dates, payments);
         self.total_balance_over_month = Some(b_chart);
         self.total_payments_over_month = Some(p_chart);

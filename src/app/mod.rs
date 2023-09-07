@@ -425,7 +425,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                         "Add simulated or historical charts to compute your balance",
                     ));
                 } else {
-                    ui.label(make_text("Balance computation ready"));
+                    ui.label(make_text("Portfolio value computation ready"));
                 }
                 ui.separator();
                 heading2(ui, "1. Add Price Development(s)");
@@ -638,7 +638,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                 }
                 ui.separator();
                 heading2(ui, "2. Set Investments");
-                ui.label("Initial balance");
+                ui.label("Initial capital");
                 if ui
                     .text_edit_singleline(&mut self.payment.initial_balance.0)
                     .changed()

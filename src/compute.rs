@@ -115,24 +115,24 @@ impl<'a> RebalanceData<'a> {
             false
         }
     }
-    fn is_triggered_by_deviation(&self, balances: &[f64]) -> bool {
+    fn is_triggered_by_deviation(&self, values: &[f64]) -> bool {
         if let Some(max_dev) = self.trigger.deviation {
-            let total_balance = balances.iter().sum::<f64>();
-            let deviation = balances
+            let portfolio_value = values.iter().sum::<f64>();
+            let deviation = values
                 .iter()
                 .zip(self.fractions)
-                .map(|(b, fr)| ((fr - b / total_balance).abs()))
+                .map(|(b, fr)| ((fr - b / portfolio_value).abs()))
                 .max_by(|a, b| a.partial_cmp(b).unwrap());
             deviation > Some(max_dev)
         } else {
             false
         }
     }
-    pub fn is_triggered(&self, balances: &[f64], month: usize) -> bool {
+    pub fn is_triggered(&self, values: &[f64], month: usize) -> bool {
         if self.trigger.interval.is_some() && self.trigger.deviation.is_some() {
-            self.is_triggered_by_interval(month) && self.is_triggered_by_deviation(balances)
+            self.is_triggered_by_interval(month) && self.is_triggered_by_deviation(values)
         } else {
-            self.is_triggered_by_interval(month) || self.is_triggered_by_deviation(balances)
+            self.is_triggered_by_interval(month) || self.is_triggered_by_deviation(values)
         }
     }
 }
@@ -174,7 +174,7 @@ pub fn find_shortestlen<'a>(price_devs: &'a [&'a [f64]]) -> Option<usize> {
 /// Arguments
 /// * `price_devs`         - developments of the individual securities (e.g., stock prices, index prices, ...)
 ///                          2d-vector, first axis addresses the security, second axis is the price
-/// * `initial_balance`    - total amount of initial investment
+/// * `initial_capital`    - total amount of initial investment
 /// * `monthly_payments    - monthly payments for each security, e.g., from a savings plan
 /// * `rebalance_interval` - pass if indices are rebalanced
 /// * `start_date`         - needed to check if which monthly payments are due
@@ -183,23 +183,23 @@ pub fn find_shortestlen<'a>(price_devs: &'a [&'a [f64]]) -> Option<usize> {
 ///
 pub fn compute_balance_over_months<'a>(
     price_devs: &'a [&'a [f64]],
-    initial_balance: f64,
+    initial_capital: f64,
     monthly_payments: Option<&'a MonthlyPayments>,
     rebalance_data: RebalanceData<'a>,
     start_date: Date,
 ) -> impl Iterator<Item = BlcResult<(f64, f64)>> + 'a {
-    let initial_balances = rebalance_data
+    let initial_values = rebalance_data
         .fractions
         .iter()
-        .map(|fr| fr * initial_balance)
+        .map(|fr| fr * initial_capital)
         .collect::<Vec<f64>>();
     let shortest_len = find_shortestlen(price_devs).unwrap_or(0);
-    let balances_over_months = (0..shortest_len).zip(1..shortest_len).scan(
-        (initial_balances, 0.0),
-        move |(balances, monthly_payments_upto_now), (i_prev_month, i_month)| {
+    let total_value_over_months = (0..shortest_len).zip(1..shortest_len).scan(
+        (initial_values, 0.0),
+        move |(prices, monthly_payments_upto_now), (i_prev_month, i_month)| {
             let vars = vec![
-                Val::Float(balances.iter().sum::<f64>()),
-                Val::Float(initial_balance),
+                Val::Float(prices.iter().sum::<f64>()),
+                Val::Float(initial_capital),
             ];
             let payment_this_month = monthly_payments
                 .map(|mp| mp.compute((start_date + i_month)?, &vars))
@@ -209,47 +209,47 @@ pub fn compute_balance_over_months<'a>(
             // immediately called closure for error handling,
             // since outer closure has to return Option
             let fractions = &rebalance_data.fractions;
-            for i_security in 0..balances.len() {
+            for i_security in 0..prices.len() {
                 let payment_this_monthsec = payment_this_month * fractions[i_security];
                 // we assume the monthly payment at the beggining of the month
                 let price_update = (payment_this_monthsec * fractions[i_security]
-                    + balances[i_security])
+                    + prices[i_security])
                     * price_devs[i_security][i_month]
                     / price_devs[i_security][i_prev_month];
-                balances[i_security] = price_update;
+                prices[i_security] = price_update;
                 *monthly_payments_upto_now += payment_this_monthsec;
             }
 
-            let total: f64 = balances.iter().sum();
-            if rebalance_data.is_triggered(balances, i_month) {
+            let total: f64 = prices.iter().sum();
+            if rebalance_data.is_triggered(prices, i_month) {
                 rebalance_data
                     .fractions
                     .iter()
-                    .zip(balances.iter_mut())
-                    .for_each(|(frac, balance)| {
-                        *balance = frac * total;
+                    .zip(prices.iter_mut())
+                    .for_each(|(frac, price)| {
+                        *price = frac * total;
                     });
             }
             Some(Ok((
-                balances.iter().sum::<f64>(),
-                initial_balance + *monthly_payments_upto_now,
+                prices.iter().sum::<f64>(),
+                initial_capital + *monthly_payments_upto_now,
             )))
         },
     );
-    iter::once(Ok((initial_balance, initial_balance))).chain(balances_over_months)
+    iter::once(Ok((initial_capital, initial_capital))).chain(total_value_over_months)
 }
 
 pub fn unzip_balance_iter(
     balance_over_month: impl Iterator<Item = BlcResult<(f64, f64)>>,
 ) -> BlcResult<(Vec<f64>, Vec<f64>)> {
-    let mut balances = vec![];
+    let mut balance_development = vec![];
     let mut payments = vec![];
     for bom in balance_over_month {
         let (b, p) = bom?;
-        balances.push(b);
+        balance_development.push(b);
         payments.push(p);
     }
-    Ok((balances, payments))
+    Ok((balance_development, payments))
 }
 
 #[allow(clippy::needless_lifetimes)]
