@@ -422,7 +422,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                     ui.label(make_text(status_msg.as_str()));
                 } else if self.charts.persisted.is_empty() {
                     ui.label(make_text(
-                        "Add simulated or historical charts to compute balances",
+                        "Add simulated or historical charts to compute your balance",
                     ));
                 } else {
                     ui.label(make_text("Balance computation ready"));
