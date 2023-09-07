@@ -957,7 +957,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                     self.status_msg = Some(format!("{e}"));
                 }
                 ui.separator();
-                egui::CollapsingHeader::new("Share your balance").show(ui, |ui| {
+                egui::CollapsingHeader::new("Share your Balance").show(ui, |ui| {
                     ui.horizontal(|ui| {
                         if ui.button("Copy link to clipboard").clicked() {
                             self.trigger_sharelink(ctx);
