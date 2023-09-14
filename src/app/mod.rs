@@ -620,20 +620,6 @@ impl<'a> BalanceApp<'a> {
                             if self.payment.monthly_payments.sliders[i].start_slider(ui) {
                                 recompute!(self);
                             }
-                            #[derive(Debug, PartialEq)]
-                            enum Enum {
-                                First,
-                                Second,
-                                Third,
-                            }
-                            let mut selected = Enum::First;
-                            egui::ComboBox::from_label("Select one!")
-                                .selected_text(format!("{:?}", selected))
-                                .show_ui(ui, |ui| {
-                                    ui.selectable_value(&mut selected, Enum::First, "First");
-                                    ui.selectable_value(&mut selected, Enum::Second, "Second");
-                                    ui.selectable_value(&mut selected, Enum::Third, "Third");
-                                });
                             if ui.button("x").clicked() {
                                 to_be_deleted.push(i);
                             }
