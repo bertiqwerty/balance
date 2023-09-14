@@ -384,6 +384,555 @@ impl<'a> BalanceApp<'a> {
             }
         }
     }
+    fn run_simulation(&mut self) {
+        self.rebalance_stats = None;
+        match self.sim.parse() {
+            Ok(parsed) => {
+                let ParsedSimInput {
+                    vola,
+                    vola_window,
+                    expected_yearly_return,
+                    is_eyr_markovian,
+                    start_month: start_date,
+                    n_months,
+                    crashes,
+                } = parsed;
+                // remove crashes that are not within relevant timespan
+                let to_be_del = self
+                    .sim
+                    .crashes
+                    .iter()
+                    .enumerate()
+                    .flat_map(|(idx, c)| c.selected_date().map(|d| (idx, d)))
+                    .filter(|(_, d)| d < &start_date || d > &(start_date + n_months).unwrap_or(*d))
+                    .map(|(idx, _)| idx)
+                    .collect::<Vec<_>>();
+                let crashes = remove_indices(crashes, &to_be_del);
+                match random_walk(
+                    expected_yearly_return,
+                    is_eyr_markovian,
+                    vola,
+                    vola_window,
+                    n_months,
+                    &crashes,
+                ) {
+                    Ok(values) => {
+                        let chart = Chart::new(
+                            if self.sim.name.is_empty() {
+                                format!(
+                                    "{}_{}_{}_{}",
+                                    self.sim.expected_yearly_return,
+                                    self.sim.n_months,
+                                    self.sim.vola,
+                                    if self.sim.is_eyr_markovian {
+                                        "mrkv"
+                                    } else {
+                                        "non-mrkv"
+                                    }
+                                )
+                            } else {
+                                self.sim.name.clone()
+                            },
+                            (0..(n_months + 1))
+                                .map(|i| date_after_nmonths(start_date, i))
+                                .collect::<Vec<_>>(),
+                            values,
+                        );
+                        self.charts.add_tmp(Some(TmpChart {
+                            chart,
+                            initial_balance: self.payment.initial_balance.1,
+                        }));
+                        self.status_msg = None;
+                        self.charts.plot_balance = false;
+                    }
+                    Err(e) => {
+                        self.status_msg = Some(format!("{e}"));
+                    }
+                };
+            }
+            Err(e) => {
+                self.status_msg = Some(format!("{e}"));
+            }
+        };
+    }
+    fn ui_add_price_dev(&mut self, ui: &mut Ui, ctx: &egui::Context) {
+        egui::CollapsingHeader::new("Simulate price development").show(ui, |ui| {
+            egui::Grid::new("simulate-inputs")
+                .num_columns(2)
+                .show(ui, |ui| {
+                    ui.label("Expected yearly return [%]");
+                    ui.text_edit_singleline(&mut self.sim.expected_yearly_return);
+                    ui.end_row();
+                    ui.label("#Months");
+                    ui.text_edit_singleline(&mut self.sim.n_months);
+                    ui.end_row();
+                    ui.label("Start date");
+                    self.sim.start_month_slider.month_slider(ui);
+                });
+            ui.horizontal(|ui| {
+                ui.label("Vola");
+                ui.radio_value(
+                    &mut self.sim.vola.amount,
+                    VolaAmount::No,
+                    format!("{}", VolaAmount::No),
+                );
+                ui.radio_value(
+                    &mut self.sim.vola.amount,
+                    VolaAmount::Lo,
+                    format!("{}", VolaAmount::Lo),
+                );
+                ui.radio_value(
+                    &mut self.sim.vola.amount,
+                    VolaAmount::Mi,
+                    format!("{}", VolaAmount::Mi),
+                );
+                ui.radio_value(
+                    &mut self.sim.vola.amount,
+                    VolaAmount::Hi,
+                    format!("{}", VolaAmount::Hi),
+                );
+            });
+            let add_crash = || {
+                let start_end = self.charts.start_end_date(true);
+                match start_end {
+                    Ok(se) => {
+                        let (start, end) = se;
+                        Ok(MonthSlider::new(start, end, SliderState::First))
+                    }
+                    Err(_) => {
+                        if let (Some(start), Ok(n_month)) = (
+                            self.sim.start_month_slider.selected_date(),
+                            self.sim.n_months.parse::<usize>(),
+                        ) {
+                            let end = start + n_month;
+                            end.map(|end| MonthSlider::new(start, end, SliderState::First))
+                        } else {
+                            let err = blcerr!(
+                                "couldn't parse n_month, what integer>0 is {}",
+                                self.sim.n_months
+                            );
+                            self.status_msg = Some(err.msg.to_string());
+                            Err(err)
+                        }
+                    }
+                }
+            };
+            egui::CollapsingHeader::new("Advanced").show(ui, |ui| {
+                egui::Grid::new("simulate-advanced")
+                    .num_columns(2)
+                    .show(ui, |ui| {
+                        ui.label("Name (auto-generated if empty)");
+                        ui.text_edit_singleline(&mut self.sim.name);
+                        ui.end_row();
+                        ui.label("Return independent of previous returns");
+                        ui.checkbox(&mut self.sim.is_eyr_markovian, "");
+                        ui.end_row();
+                        ui.label("Times of similar volatility");
+                        ui.checkbox(&mut self.sim.vola.smoothing, "");
+                        ui.end_row();
+                        let show_crash = |i, month_slider: &mut MonthSlider, ui: &mut Ui| {
+                            ui.label(format!("Crash {}", i + 1));
+                            month_slider.month_slider(ui);
+                        };
+                        self.sim
+                            .crashes
+                            .show(ui, show_crash, add_crash, "Add crash");
+                    })
+            });
+
+            ui.horizontal(|ui| {
+                if ui.button("Run simulation").clicked() {
+                    self.run_simulation()
+                }
+            });
+        });
+        egui::CollapsingHeader::new("Use historical data as price development").show(ui, |ui| {
+            ui.horizontal(|ui| {
+                let mut dl_button = |name, filename| {
+                    if ui.button(name).clicked() {
+                        let url = format!("{BASE_URL_WWW}/{filename}");
+                        self.download_historic_csv.trigger(
+                            &url,
+                            name,
+                            RestMethod::Get,
+                            Some(ctx.clone()),
+                        );
+                        self.charts.plot_balance = false;
+                        self.rebalance_stats = None;
+                    }
+                };
+                dl_button("MSCI ACWI", "msciacwi.csv");
+                dl_button("MSCI World", "msciworld.csv");
+                dl_button("MSCI EM", "msciem.csv");
+                dl_button("MSCI Europe", "mscieurope.csv");
+                dl_button("S&P 500", "sandp500.csv");
+            });
+            ui.horizontal(|ui| {
+                ui.label("data from");
+                ui.hyperlink_to(
+                    "Backtest by Curvo",
+                    "https://curvo.eu/backtest/faq#is-it-free",
+                );
+            });
+        });
+
+        if ui
+            .button("Add price development for balance computation")
+            .clicked()
+        {
+            self.best_rebalance_trigger = None;
+            self.charts.persist_tmp();
+            self.recompute_balance();
+        }
+        ui.separator();
+        if !self.charts.persisted.is_empty() && self.charts.fraction_sliders(ui) {
+            recompute!(self);
+        }
+    }
+    fn ui_set_investment(&mut self, ui: &mut Ui) {
+        ui.label("Initial capital");
+        if ui
+            .text_edit_singleline(&mut self.payment.initial_balance.0)
+            .changed()
+        {
+            recompute!(self);
+        }
+        egui::CollapsingHeader::new("Monthly payments").show(ui, |ui| {
+            egui::Grid::new("monthly-payments-interval")
+                .num_columns(2)
+                .show(ui, |ui| {
+                    let mut to_be_deleted = vec![];
+                    for i in 0..self.payment.monthly_payments.pay_fields.len() {
+                        if i > 0 {
+                            ui.label(format!("Monthly payment {}", i + 1).as_str());
+                        } else {
+                            ui.label("Monthly payment");
+                        }
+                        if ui
+                            .text_edit_singleline(&mut self.payment.monthly_payments.pay_fields[i])
+                            .changed()
+                        {
+                            recompute!(self);
+                        }
+                        if !self.payment.monthly_payments.sliders.is_empty() {
+                            ui.end_row();
+                            ui.label("");
+                            if self.payment.monthly_payments.sliders[i].start_slider(ui) {
+                                recompute!(self);
+                            }
+                            #[derive(Debug, PartialEq)]
+                            enum Enum {
+                                First,
+                                Second,
+                                Third,
+                            }
+                            let mut selected = Enum::First;
+                            egui::ComboBox::from_label("Select one!")
+                                .selected_text(format!("{:?}", selected))
+                                .show_ui(ui, |ui| {
+                                    ui.selectable_value(&mut selected, Enum::First, "First");
+                                    ui.selectable_value(&mut selected, Enum::Second, "Second");
+                                    ui.selectable_value(&mut selected, Enum::Third, "Third");
+                                });
+                            if ui.button("x").clicked() {
+                                to_be_deleted.push(i);
+                            }
+                            ui.end_row();
+                            ui.label("");
+                            if self.payment.monthly_payments.sliders[i].end_slider(ui) {
+                                recompute!(self);
+                            }
+                        }
+                        ui.end_row();
+                    }
+                    self.payment.monthly_payments.sliders = remove_indices(
+                        mem::take(&mut self.payment.monthly_payments.sliders),
+                        &to_be_deleted,
+                    );
+                    if self.payment.monthly_payments.pay_fields.len() > 1 {
+                        self.payment.monthly_payments.pay_fields = remove_indices(
+                            mem::take(&mut self.payment.monthly_payments.pay_fields),
+                            &to_be_deleted,
+                        );
+                    }
+                    if !to_be_deleted.is_empty() {
+                        recompute!(self);
+                    }
+                    let button_label = if self.payment.monthly_payments.sliders.is_empty() {
+                        "Restrict or add"
+                    } else {
+                        "Add"
+                    };
+                    if ui.button(button_label).clicked() {
+                        let start_end = self.charts.start_end_date(true);
+                        match start_end {
+                            Ok(se) => {
+                                if !self.payment.monthly_payments.sliders.is_empty() {
+                                    self.payment
+                                        .monthly_payments
+                                        .pay_fields
+                                        .push("0.0".to_string());
+                                }
+                                let (start_date, end_date) = se;
+                                let start_slider =
+                                    MonthSlider::new(start_date, end_date, SliderState::First);
+                                let end_slider =
+                                    MonthSlider::new(start_date, end_date, SliderState::Last);
+                                self.payment
+                                    .monthly_payments
+                                    .sliders
+                                    .push(MonthSliderPair::new(start_slider, end_slider));
+                            }
+                            Err(e) => {
+                                self.status_msg = Some(e.msg.to_string());
+                            }
+                        }
+                    }
+                });
+        });
+        egui::CollapsingHeader::new("Rebalancing strategy").show(ui, |ui| {
+            egui::Grid::new("rebalancing-strategy-inputs").show(ui, |ui| {
+                ui.label("Rebalance interval [#months]");
+                if ui
+                    .text_edit_singleline(&mut self.payment.rebalance_interval.0)
+                    .changed()
+                {
+                    self.recompute_balance();
+                    self.recompute_rebalance_stats(false);
+                }
+                ui.end_row();
+                ui.label("Rebalance deviation threshold [%]");
+                if ui
+                    .text_edit_singleline(&mut self.payment.rebalance_deviation.0)
+                    .changed()
+                {
+                    self.recompute_balance();
+                    self.recompute_rebalance_stats(false);
+                }
+                ui.end_row();
+            });
+        });
+        egui::CollapsingHeader::new("Restrict timeline").show(ui, |ui| {
+            egui::Grid::new("restriction-of-timeline").show(ui, |ui| {
+                if self.charts.start_slider(ui) {
+                    recompute!(self);
+                }
+                ui.end_row();
+                if self.charts.end_slider(ui) {
+                    recompute!(self);
+                }
+            });
+        });
+        ui.separator();
+    }
+    fn ui_show_results(&mut self, ui: &mut Ui, ctx: &Context) {
+        egui::Grid::new("balance-number-results").show(ui, |ui| {
+            if let Some(final_balance) = &self.final_balance {
+                let FinalBalance {
+                    final_balance,
+                    yearly_return_perc,
+                    total_payments,
+                } = final_balance;
+                ui.label("Final balance");
+                ui.label(RichText::new(format_num(*final_balance)).strong());
+                ui.label("Total payments");
+                ui.label(RichText::new(format_num(*total_payments)).strong());
+                ui.label("Yearly reaturn [%]");
+                ui.label(RichText::new(format_num(*yearly_return_perc)).strong());
+            } else {
+                ui.label("Final balance");
+                ui.label("-");
+                ui.label("Total payments");
+                ui.label("-");
+                ui.label("Yearly return [%]");
+                ui.label("-");
+            }
+        });
+        ui.horizontal(|ui| {
+            if ui
+                .selectable_label(
+                    self.charts.plot_balance
+                        && self.rebalance_stats.is_none()
+                        && self.best_rebalance_trigger.is_none(),
+                    "Balance plot",
+                )
+                .clicked()
+            {
+                self.charts.plot_balance = true;
+                self.rebalance_stats = None;
+                self.best_rebalance_trigger = None;
+            } else if ui
+                .selectable_label(
+                    !self.charts.plot_balance
+                        && self.rebalance_stats.is_none()
+                        && self.best_rebalance_trigger.is_none(),
+                    "Charts plot",
+                )
+                .clicked()
+            {
+                self.charts.plot_balance = false;
+                self.rebalance_stats = None;
+                self.best_rebalance_trigger = None;
+            } else if ui
+                .selectable_label(
+                    self.rebalance_stats.is_some() && self.best_rebalance_trigger.is_none(),
+                    "Rebalance statistics",
+                )
+                .clicked()
+            {
+                self.best_rebalance_trigger = None;
+                self.recompute_rebalance_stats(true);
+            } else if ui
+                .selectable_label(
+                    self.best_rebalance_trigger.is_some(),
+                    "Best rebalance strategy",
+                )
+                .clicked()
+            {
+                let PaymentData {
+                    initial_balance: (_, initial_balance),
+                    monthly_payments,
+                    rebalance_interval: (_, _),
+                    rebalance_deviation: (_, _),
+                } = &self.payment;
+                self.best_rebalance_trigger = match self
+                    .charts
+                    .find_bestrebalancetrigger(*initial_balance, &monthly_payments.payments)
+                {
+                    Ok(x) => Some(x),
+                    Err(e) => {
+                        self.status_msg = Some(format!("could not find best trigger; {e}"));
+                        None
+                    }
+                };
+            }
+        });
+        if let Some(best_trigger) = &self.best_rebalance_trigger {
+            egui::Grid::new("best-balance").show(ui, |ui| {
+                ui.label("(best) balance");
+                ui.label("(best) yearly return");
+                ui.label("interval [#month]");
+                ui.label("deviation threshold [%]");
+                ui.end_row();
+                let toshow = iter::once(best_trigger.best)
+                    .chain(iter::once(best_trigger.with_best_dev))
+                    .chain(iter::once(best_trigger.with_best_interval));
+                for (trigger, balance, total_payments) in toshow {
+                    ui.label(format!("{balance:0.2}"));
+                    if let Ok(n_months) = self.charts.n_months_persisted() {
+                        let (yearly_return_perc, _) =
+                            yearly_return(total_payments, n_months, balance);
+                        ui.label(format!("{yearly_return_perc:0.2}"));
+                    } else {
+                        ui.label("-");
+                    }
+                    if let Some(interval) = trigger.interval {
+                        ui.label(format!("{interval}"));
+                    } else {
+                        ui.label("None");
+                    }
+                    if let Some(deviation) = trigger.deviation {
+                        let dev_perc = (deviation * 100.0).round() as usize;
+                        ui.label(format!("{dev_perc}"));
+                    } else {
+                        ui.label("None");
+                    }
+                    ui.end_row();
+                }
+            });
+        } else if let (Some(summary), Some(_)) =
+            (&self.rebalance_stats_summary, &self.rebalance_stats)
+        {
+            match summary {
+                Ok(summary) => {
+                    egui::Grid::new("rebalance-stats").show(ui, |ui| {
+                        ui.label("#months");
+                        ui.label("w re-balance");
+                        ui.label("wo re-balance");
+                        ui.label("re-balance is that much better on average");
+                        ui.end_row();
+                        ui.label(format!(
+                            "{:03} - {:03}",
+                            summary.min_n_months, summary.n_months_33
+                        ));
+                        ui.label(format!("{:0.2}", summary.mean_across_months_w_reb_min_33));
+                        ui.label(format!("{:0.2}", summary.mean_across_months_wo_reb_min_33));
+                        let factor = summary.mean_across_months_w_reb_min_33
+                            / summary.mean_across_months_wo_reb_min_33;
+                        ui.label(format!("{factor:0.3}"));
+                        ui.end_row();
+                        ui.label(format!(
+                            "{:03} - {:03}",
+                            summary.n_months_33, summary.n_months_67
+                        ));
+                        ui.label(format!("{:0.2}", summary.mean_across_months_w_reb_33_67));
+                        ui.label(format!("{:0.2}", summary.mean_across_months_wo_reb_33_67));
+                        let factor = summary.mean_across_months_w_reb_33_67
+                            / summary.mean_across_months_wo_reb_33_67;
+                        ui.label(format!("{factor:0.3}"));
+                        ui.end_row();
+                        ui.label(format!(
+                            "{:03} - {:03}",
+                            summary.n_months_67, summary.max_n_months
+                        ));
+                        ui.label(format!("{:0.2}", summary.mean_across_months_w_reb_67_max));
+                        ui.label(format!("{:0.2}", summary.mean_across_months_wo_reb_67_max));
+                        let factor = summary.mean_across_months_w_reb_67_max
+                            / summary.mean_across_months_wo_reb_67_max;
+                        ui.label(format!("{factor:0.3}"));
+                        ui.end_row();
+                        ui.label(format!(
+                            "{:03} - {:03}",
+                            summary.min_n_months, summary.max_n_months
+                        ));
+                        ui.label(format!("{:0.2}", summary.mean_across_months_w_reb));
+                        ui.label(format!("{:0.2}", summary.mean_across_months_wo_reb));
+                        let factor =
+                            summary.mean_across_months_w_reb / summary.mean_across_months_wo_reb;
+                        ui.label(format!("{factor:0.3}"));
+                    });
+                    ui.label("We ignore any costs that might be induced by re-balancing.");
+                }
+                Err(e) => {
+                    self.status_msg = Some(format!("{e}"));
+                }
+            }
+        } else if let Err(e) = self.charts.plot(ui) {
+            self.status_msg = Some(format!("{e}"));
+        }
+        ui.separator();
+        egui::CollapsingHeader::new("Share your Balance").show(ui, |ui| {
+            ui.horizontal(|ui| {
+                if ui.button("Copy link to clipboard").clicked() {
+                    self.trigger_sharelink(ctx);
+                }
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    ui.text_edit_singleline(&mut self.session_id_to_be_loaded);
+                    if ui.button("Load").clicked() {
+                        self.trigger_load(&self.session_id_to_be_loaded.clone(), None);
+                    }
+                }
+            });
+            ui.end_row();
+            if ui.button("Download charts as csv").clicked() {
+                #[cfg(target_arch = "wasm32")]
+                log("download csv");
+                export_csv(&self.charts).unwrap();
+            }
+        });
+        ui.horizontal(|ui| {
+            if ui.button("Reset").clicked() {
+                *self = Self::default();
+            }
+            ui.label("-");
+            ui.label("Code on");
+            ui.hyperlink_to("Github", "https://github.com/bertiqwerty/balance");
+            ui.label("-");
+            ui.hyperlink_to("Impressum", "https://bertiqwerty.com/impressum");
+        });
+        egui::warn_if_debug_build(ui);
+    }
 }
 
 impl<'a> eframe::App for BalanceApp<'a> {
@@ -429,565 +978,12 @@ impl<'a> eframe::App for BalanceApp<'a> {
                 }
                 ui.separator();
                 heading2(ui, "1. Add Price Development(s)");
-                egui::CollapsingHeader::new("Simulate price development").show(ui, |ui| {
-                    egui::Grid::new("simulate-inputs")
-                        .num_columns(2)
-                        .show(ui, |ui| {
-                            ui.label("Expected yearly return [%]");
-                            ui.text_edit_singleline(&mut self.sim.expected_yearly_return);
-                            ui.end_row();
-                            ui.label("#Months");
-                            ui.text_edit_singleline(&mut self.sim.n_months);
-                            ui.end_row();
-                            ui.label("Start date");
-                            self.sim.start_month_slider.month_slider(ui);
-                        });
-                    ui.horizontal(|ui| {
-                        ui.label("Vola");
-                        ui.radio_value(
-                            &mut self.sim.vola.amount,
-                            VolaAmount::No,
-                            format!("{}", VolaAmount::No),
-                        );
-                        ui.radio_value(
-                            &mut self.sim.vola.amount,
-                            VolaAmount::Lo,
-                            format!("{}", VolaAmount::Lo),
-                        );
-                        ui.radio_value(
-                            &mut self.sim.vola.amount,
-                            VolaAmount::Mi,
-                            format!("{}", VolaAmount::Mi),
-                        );
-                        ui.radio_value(
-                            &mut self.sim.vola.amount,
-                            VolaAmount::Hi,
-                            format!("{}", VolaAmount::Hi),
-                        );
-                    });
-                    let add_crash = || {
-                        let start_end = self.charts.start_end_date(true);
-                        match start_end {
-                            Ok(se) => {
-                                let (start, end) = se;
-                                Ok(MonthSlider::new(start, end, SliderState::First))
-                            }
-                            Err(_) => {
-                                if let (Some(start), Ok(n_month)) = (
-                                    self.sim.start_month_slider.selected_date(),
-                                    self.sim.n_months.parse::<usize>(),
-                                ) {
-                                    let end = start + n_month;
-                                    end.map(|end| MonthSlider::new(start, end, SliderState::First))
-                                } else {
-                                    let err = blcerr!(
-                                        "couldn't parse n_month, what integer>0 is {}",
-                                        self.sim.n_months
-                                    );
-                                    self.status_msg = Some(err.msg.to_string());
-                                    Err(err)
-                                }
-                            }
-                        }
-                    };
-                    egui::CollapsingHeader::new("Advanced").show(ui, |ui| {
-                        egui::Grid::new("simulate-advanced")
-                            .num_columns(2)
-                            .show(ui, |ui| {
-                                ui.label("Name (auto-generated if empty)");
-                                ui.text_edit_singleline(&mut self.sim.name);
-                                ui.end_row();
-                                ui.label("Return independent of previous returns");
-                                ui.checkbox(&mut self.sim.is_eyr_markovian, "");
-                                ui.end_row();
-                                ui.label("Times of similar volatility");
-                                ui.checkbox(&mut self.sim.vola.smoothing, "");
-                                ui.end_row();
-                                let show_crash =
-                                    |i, month_slider: &mut MonthSlider, ui: &mut Ui| {
-                                        ui.label(format!("Crash {}", i + 1));
-                                        month_slider.month_slider(ui);
-                                    };
-                                self.sim
-                                    .crashes
-                                    .show(ui, show_crash, add_crash, "Add crash");
-                            })
-                    });
-
-                    ui.horizontal(|ui| {
-                        if ui.button("Run simulation").clicked() {
-                            self.rebalance_stats = None;
-                            match self.sim.parse() {
-                                Ok(parsed) => {
-                                    let ParsedSimInput {
-                                        vola,
-                                        vola_window,
-                                        expected_yearly_return,
-                                        is_eyr_markovian,
-                                        start_month: start_date,
-                                        n_months,
-                                        crashes,
-                                    } = parsed;
-                                    // remove crashes that are not within relevant timespan
-                                    let to_be_del = self
-                                        .sim
-                                        .crashes
-                                        .iter()
-                                        .enumerate()
-                                        .flat_map(|(idx, c)| c.selected_date().map(|d| (idx, d)))
-                                        .filter(|(_, d)| {
-                                            d < &start_date
-                                                || d > &(start_date + n_months).unwrap_or(*d)
-                                        })
-                                        .map(|(idx, _)| idx)
-                                        .collect::<Vec<_>>();
-                                    let crashes = remove_indices(crashes, &to_be_del);
-                                    match random_walk(
-                                        expected_yearly_return,
-                                        is_eyr_markovian,
-                                        vola,
-                                        vola_window,
-                                        n_months,
-                                        &crashes,
-                                    ) {
-                                        Ok(values) => {
-                                            let chart = Chart::new(
-                                                if self.sim.name.is_empty() {
-                                                    format!(
-                                                        "{}_{}_{}_{}",
-                                                        self.sim.expected_yearly_return,
-                                                        self.sim.n_months,
-                                                        self.sim.vola,
-                                                        if self.sim.is_eyr_markovian {
-                                                            "mrkv"
-                                                        } else {
-                                                            "non-mrkv"
-                                                        }
-                                                    )
-                                                } else {
-                                                    self.sim.name.clone()
-                                                },
-                                                (0..(n_months + 1))
-                                                    .map(|i| date_after_nmonths(start_date, i))
-                                                    .collect::<Vec<_>>(),
-                                                values,
-                                            );
-                                            self.charts.add_tmp(Some(TmpChart {
-                                                chart,
-                                                initial_balance: self.payment.initial_balance.1,
-                                            }));
-                                            self.status_msg = None;
-                                            self.charts.plot_balance = false;
-                                        }
-                                        Err(e) => {
-                                            self.status_msg = Some(format!("{e}"));
-                                        }
-                                    };
-                                }
-                                Err(e) => {
-                                    self.status_msg = Some(format!("{e}"));
-                                }
-                            };
-                        }
-                    });
-                });
-                egui::CollapsingHeader::new("Use historical data as price development").show(
-                    ui,
-                    |ui| {
-                        ui.horizontal(|ui| {
-                            let mut dl_button = |name, filename| {
-                                if ui.button(name).clicked() {
-                                    let url = format!("{BASE_URL_WWW}/{filename}");
-                                    self.download_historic_csv.trigger(
-                                        &url,
-                                        name,
-                                        RestMethod::Get,
-                                        Some(ctx.clone()),
-                                    );
-                                    self.charts.plot_balance = false;
-                                    self.rebalance_stats = None;
-                                }
-                            };
-                            dl_button("MSCI ACWI", "msciacwi.csv");
-                            dl_button("MSCI World", "msciworld.csv");
-                            dl_button("MSCI EM", "msciem.csv");
-                            dl_button("MSCI Europe", "mscieurope.csv");
-                            dl_button("S&P 500", "sandp500.csv");
-                        });
-                        ui.horizontal(|ui| {
-                            ui.label("data from");
-                            ui.hyperlink_to(
-                                "Backtest by Curvo",
-                                "https://curvo.eu/backtest/faq#is-it-free",
-                            );
-                        });
-                    },
-                );
-
-                if ui
-                    .button("Add price development for balance computation")
-                    .clicked()
-                {
-                    self.best_rebalance_trigger = None;
-                    self.charts.persist_tmp();
-                    self.recompute_balance();
-                }
-                ui.separator();
-                if !self.charts.persisted.is_empty() && self.charts.fraction_sliders(ui) {
-                    recompute!(self);
-                }
+                self.ui_add_price_dev(ui, ctx);
                 ui.separator();
                 heading2(ui, "2. Set Investments");
-                ui.label("Initial capital");
-                if ui
-                    .text_edit_singleline(&mut self.payment.initial_balance.0)
-                    .changed()
-                {
-                    recompute!(self);
-                }
-                egui::CollapsingHeader::new("Monthly payments").show(ui, |ui| {
-                    egui::Grid::new("monthly-payments-interval")
-                        .num_columns(2)
-                        .show(ui, |ui| {
-                            let mut to_be_deleted = vec![];
-                            for i in 0..self.payment.monthly_payments.pay_fields.len() {
-                                if i > 0 {
-                                    ui.label(format!("Monthly payment {}", i + 1).as_str());
-                                } else {
-                                    ui.label("Monthly payment");
-                                }
-                                if ui
-                                    .text_edit_singleline(
-                                        &mut self.payment.monthly_payments.pay_fields[i],
-                                    )
-                                    .changed()
-                                {
-                                    recompute!(self);
-                                }
-                                if !self.payment.monthly_payments.sliders.is_empty() {
-                                    ui.end_row();
-                                    ui.label("");
-                                    if self.payment.monthly_payments.sliders[i].start_slider(ui) {
-                                        recompute!(self);
-                                    }
-                                    if ui.button("x").clicked() {
-                                        to_be_deleted.push(i);
-                                    }
-                                    ui.end_row();
-                                    ui.label("");
-                                    if self.payment.monthly_payments.sliders[i].end_slider(ui) {
-                                        recompute!(self);
-                                    }
-                                }
-                                ui.end_row();
-                            }
-                            self.payment.monthly_payments.sliders = remove_indices(
-                                mem::take(&mut self.payment.monthly_payments.sliders),
-                                &to_be_deleted,
-                            );
-                            if self.payment.monthly_payments.pay_fields.len() > 1 {
-                                self.payment.monthly_payments.pay_fields = remove_indices(
-                                    mem::take(&mut self.payment.monthly_payments.pay_fields),
-                                    &to_be_deleted,
-                                );
-                            }
-                            if !to_be_deleted.is_empty() {
-                                recompute!(self);
-                            }
-                            let button_label = if self.payment.monthly_payments.sliders.is_empty() {
-                                "Restrict or add"
-                            } else {
-                                "Add"
-                            };
-                            if ui.button(button_label).clicked() {
-                                let start_end = self.charts.start_end_date(true);
-                                match start_end {
-                                    Ok(se) => {
-                                        if !self.payment.monthly_payments.sliders.is_empty() {
-                                            self.payment
-                                                .monthly_payments
-                                                .pay_fields
-                                                .push("0.0".to_string());
-                                        }
-                                        let (start_date, end_date) = se;
-                                        let start_slider = MonthSlider::new(
-                                            start_date,
-                                            end_date,
-                                            SliderState::First,
-                                        );
-                                        let end_slider = MonthSlider::new(
-                                            start_date,
-                                            end_date,
-                                            SliderState::Last,
-                                        );
-                                        self.payment
-                                            .monthly_payments
-                                            .sliders
-                                            .push(MonthSliderPair::new(start_slider, end_slider));
-                                    }
-                                    Err(e) => {
-                                        self.status_msg = Some(e.msg.to_string());
-                                    }
-                                }
-                            }
-                        });
-                });
-                egui::CollapsingHeader::new("Rebalancing strategy").show(ui, |ui| {
-                    egui::Grid::new("rebalancing-strategy-inputs").show(ui, |ui| {
-                        ui.label("Rebalance interval [#months]");
-                        if ui
-                            .text_edit_singleline(&mut self.payment.rebalance_interval.0)
-                            .changed()
-                        {
-                            self.recompute_balance();
-                            self.recompute_rebalance_stats(false);
-                        }
-                        ui.end_row();
-                        ui.label("Rebalance deviation threshold [%]");
-                        if ui
-                            .text_edit_singleline(&mut self.payment.rebalance_deviation.0)
-                            .changed()
-                        {
-                            self.recompute_balance();
-                            self.recompute_rebalance_stats(false);
-                        }
-                        ui.end_row();
-                    });
-                });
-                egui::CollapsingHeader::new("Restrict timeline").show(ui, |ui| {
-                    egui::Grid::new("restriction-of-timeline").show(ui, |ui| {
-                        if self.charts.start_slider(ui) {
-                            recompute!(self);
-                        }
-                        ui.end_row();
-                        if self.charts.end_slider(ui) {
-                            recompute!(self);
-                        }
-                    });
-                });
-                ui.separator();
+                self.ui_set_investment(ui);
                 heading2(ui, "3. Investigate Results");
-                egui::Grid::new("balance-number-results").show(ui, |ui| {
-                    if let Some(final_balance) = &self.final_balance {
-                        let FinalBalance {
-                            final_balance,
-                            yearly_return_perc,
-                            total_payments,
-                        } = final_balance;
-                        ui.label("Final balance");
-                        ui.label(RichText::new(format_num(*final_balance)).strong());
-                        ui.label("Total payments");
-                        ui.label(RichText::new(format_num(*total_payments)).strong());
-                        ui.label("Yearly reaturn [%]");
-                        ui.label(RichText::new(format_num(*yearly_return_perc)).strong());
-                    } else {
-                        ui.label("Final balance");
-                        ui.label("-");
-                        ui.label("Total payments");
-                        ui.label("-");
-                        ui.label("Yearly return [%]");
-                        ui.label("-");
-                    }
-                });
-                ui.horizontal(|ui| {
-                    if ui
-                        .selectable_label(
-                            self.charts.plot_balance
-                                && self.rebalance_stats.is_none()
-                                && self.best_rebalance_trigger.is_none(),
-                            "Balance plot",
-                        )
-                        .clicked()
-                    {
-                        self.charts.plot_balance = true;
-                        self.rebalance_stats = None;
-                        self.best_rebalance_trigger = None;
-                    } else if ui
-                        .selectable_label(
-                            !self.charts.plot_balance
-                                && self.rebalance_stats.is_none()
-                                && self.best_rebalance_trigger.is_none(),
-                            "Charts plot",
-                        )
-                        .clicked()
-                    {
-                        self.charts.plot_balance = false;
-                        self.rebalance_stats = None;
-                        self.best_rebalance_trigger = None;
-                    } else if ui
-                        .selectable_label(
-                            self.rebalance_stats.is_some() && self.best_rebalance_trigger.is_none(),
-                            "Rebalance statistics",
-                        )
-                        .clicked()
-                    {
-                        self.best_rebalance_trigger = None;
-                        self.recompute_rebalance_stats(true);
-                    } else if ui
-                        .selectable_label(
-                            self.best_rebalance_trigger.is_some(),
-                            "Best rebalance strategy",
-                        )
-                        .clicked()
-                    {
-                        let PaymentData {
-                            initial_balance: (_, initial_balance),
-                            monthly_payments,
-                            rebalance_interval: (_, _),
-                            rebalance_deviation: (_, _),
-                        } = &self.payment;
-                        self.best_rebalance_trigger = match self
-                            .charts
-                            .find_bestrebalancetrigger(*initial_balance, &monthly_payments.payments)
-                        {
-                            Ok(x) => Some(x),
-                            Err(e) => {
-                                self.status_msg = Some(format!("could not find best trigger; {e}"));
-                                None
-                            }
-                        };
-                    }
-                });
-                if let Some(best_trigger) = &self.best_rebalance_trigger {
-                    egui::Grid::new("best-balance").show(ui, |ui| {
-                        ui.label("(best) balance");
-                        ui.label("(best) yearly return");
-                        ui.label("interval [#month]");
-                        ui.label("deviation threshold [%]");
-                        ui.end_row();
-                        let toshow = iter::once(best_trigger.best)
-                            .chain(iter::once(best_trigger.with_best_dev))
-                            .chain(iter::once(best_trigger.with_best_interval));
-                        for (trigger, balance, total_payments) in toshow {
-                            ui.label(format!("{balance:0.2}"));
-                            if let Ok(n_months) = self.charts.n_months_persisted() {
-                                let (yearly_return_perc, _) =
-                                    yearly_return(total_payments, n_months, balance);
-                                ui.label(format!("{yearly_return_perc:0.2}"));
-                            } else {
-                                ui.label("-");
-                            }
-                            if let Some(interval) = trigger.interval {
-                                ui.label(format!("{interval}"));
-                            } else {
-                                ui.label("None");
-                            }
-                            if let Some(deviation) = trigger.deviation {
-                                let dev_perc = (deviation * 100.0).round() as usize;
-                                ui.label(format!("{dev_perc}"));
-                            } else {
-                                ui.label("None");
-                            }
-                            ui.end_row();
-                        }
-                    });
-                } else if let (Some(summary), Some(_)) =
-                    (&self.rebalance_stats_summary, &self.rebalance_stats)
-                {
-                    match summary {
-                        Ok(summary) => {
-                            egui::Grid::new("rebalance-stats").show(ui, |ui| {
-                                ui.label("#months");
-                                ui.label("w re-balance");
-                                ui.label("wo re-balance");
-                                ui.label("re-balance is that much better on average");
-                                ui.end_row();
-                                ui.label(format!(
-                                    "{:03} - {:03}",
-                                    summary.min_n_months, summary.n_months_33
-                                ));
-                                ui.label(format!(
-                                    "{:0.2}",
-                                    summary.mean_across_months_w_reb_min_33
-                                ));
-                                ui.label(format!(
-                                    "{:0.2}",
-                                    summary.mean_across_months_wo_reb_min_33
-                                ));
-                                let factor = summary.mean_across_months_w_reb_min_33
-                                    / summary.mean_across_months_wo_reb_min_33;
-                                ui.label(format!("{factor:0.3}"));
-                                ui.end_row();
-                                ui.label(format!(
-                                    "{:03} - {:03}",
-                                    summary.n_months_33, summary.n_months_67
-                                ));
-                                ui.label(format!("{:0.2}", summary.mean_across_months_w_reb_33_67));
-                                ui.label(format!(
-                                    "{:0.2}",
-                                    summary.mean_across_months_wo_reb_33_67
-                                ));
-                                let factor = summary.mean_across_months_w_reb_33_67
-                                    / summary.mean_across_months_wo_reb_33_67;
-                                ui.label(format!("{factor:0.3}"));
-                                ui.end_row();
-                                ui.label(format!(
-                                    "{:03} - {:03}",
-                                    summary.n_months_67, summary.max_n_months
-                                ));
-                                ui.label(format!(
-                                    "{:0.2}",
-                                    summary.mean_across_months_w_reb_67_max
-                                ));
-                                ui.label(format!(
-                                    "{:0.2}",
-                                    summary.mean_across_months_wo_reb_67_max
-                                ));
-                                let factor = summary.mean_across_months_w_reb_67_max
-                                    / summary.mean_across_months_wo_reb_67_max;
-                                ui.label(format!("{factor:0.3}"));
-                                ui.end_row();
-                                ui.label(format!(
-                                    "{:03} - {:03}",
-                                    summary.min_n_months, summary.max_n_months
-                                ));
-                                ui.label(format!("{:0.2}", summary.mean_across_months_w_reb));
-                                ui.label(format!("{:0.2}", summary.mean_across_months_wo_reb));
-                                let factor = summary.mean_across_months_w_reb
-                                    / summary.mean_across_months_wo_reb;
-                                ui.label(format!("{factor:0.3}"));
-                            });
-                            ui.label("We ignore any costs that might be induced by re-balancing.");
-                        }
-                        Err(e) => {
-                            self.status_msg = Some(format!("{e}"));
-                        }
-                    }
-                } else if let Err(e) = self.charts.plot(ui) {
-                    self.status_msg = Some(format!("{e}"));
-                }
-                ui.separator();
-                egui::CollapsingHeader::new("Share your Balance").show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        if ui.button("Copy link to clipboard").clicked() {
-                            self.trigger_sharelink(ctx);
-                        }
-                        #[cfg(not(target_arch = "wasm32"))]
-                        {
-                            ui.text_edit_singleline(&mut self.session_id_to_be_loaded);
-                            if ui.button("Load").clicked() {
-                                self.trigger_load(&self.session_id_to_be_loaded.clone(), None);
-                            }
-                        }
-                    });
-                    ui.end_row();
-                    if ui.button("Download charts as csv").clicked() {
-                        #[cfg(target_arch = "wasm32")]
-                        log("download csv");
-                        export_csv(&self.charts).unwrap();
-                    }
-                });
-                ui.horizontal(|ui| {
-                    if ui.button("Reset").clicked() {
-                        *self = Self::default();
-                    }
-                    ui.label("-");
-                    ui.label("Code on");
-                    ui.hyperlink_to("Github", "https://github.com/bertiqwerty/balance");
-                    ui.label("-");
-                    ui.hyperlink_to("Impressum", "https://bertiqwerty.com/impressum");
-                });
-                egui::warn_if_debug_build(ui);
+                self.ui_show_results(ui, ctx);
             });
         });
     }
