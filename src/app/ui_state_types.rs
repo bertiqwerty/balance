@@ -186,8 +186,8 @@ impl Default for SimInput {
     fn default() -> Self {
         SimInput {
             vola: Vola::new(),
-            expected_yearly_return: "7.0".to_string(),
-            is_eyr_markovian: true,
+            expected_yearly_return: "6.0".to_string(),
+            is_eyr_markovian: false,
             n_months: "360".to_string(),
             start_month_slider: MonthSlider::new(
                 Date::new(1970, 1).unwrap(),
@@ -251,7 +251,7 @@ pub struct PaymentData {
 }
 impl PaymentData {
     pub fn parse(&mut self) -> BlcResult<()> {
-        self.initial_balance.1 = self.initial_balance.0.parse().map_err(to_blc)?;
+        self.initial_balance.1 = self.initial_balance.0.replace(" ", "").parse().map_err(to_blc)?;
         self.monthly_payments.parse()?;
         self.rebalance_interval.1 = self.rebalance_interval.0.parse().ok();
         self.rebalance_deviation.1 = self
