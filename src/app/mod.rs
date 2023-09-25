@@ -724,7 +724,7 @@ impl<'a> BalanceApp<'a> {
                 ui.label("Total payments");
                 ui.label(RichText::new(format_num(*total_payments)).strong());
                 ui.label("Yearly reaturn [%]");
-                ui.label(RichText::new(format_num(*yearly_return_perc)).strong());
+                ui.label(RichText::new(format_num(yearly_return_perc.unwrap_or(f64::NAN))).strong());
             } else {
                 ui.label("Final balance");
                 ui.label("-");
