@@ -1,6 +1,6 @@
 [package]
 name = "rebalance"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Behrang Shafei"]
 edition = "2021"
 rust-version = "1.71"
@@ -11,7 +11,7 @@ repository = "https://github.com/bertiqwerty/balance/"
 homepage = "https://github.com/bertiqwerty/balance/"
 readme = "README.md"
 keywords = ["finance", "investment", "portfolio", "stock", "simulation"]
-categories = ["Simulation", "Finance"]
+categories = ["simulation", "finance"]
 include = ["**/*.rs", "Cargo.toml"]
 
 [dependencies]
