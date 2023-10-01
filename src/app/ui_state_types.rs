@@ -251,7 +251,12 @@ pub struct PaymentData {
 }
 impl PaymentData {
     pub fn parse(&mut self) -> BlcResult<()> {
-        self.initial_balance.1 = self.initial_balance.0.replace(" ", "").parse().map_err(to_blc)?;
+        self.initial_balance.1 = self
+            .initial_balance
+            .0
+            .replace(' ', "")
+            .parse()
+            .map_err(to_blc)?;
         self.monthly_payments.parse()?;
         self.rebalance_interval.1 = self.rebalance_interval.0.parse().ok();
         self.rebalance_deviation.1 = self
@@ -278,7 +283,7 @@ impl Default for PaymentData {
 #[derive(Deserialize, Serialize)]
 pub struct FinalBalance {
     pub final_balance: f64,
-    pub yearly_return_perc: Option<f64>,  // Option since this might be NAN and json makes NANs to nulls
+    pub yearly_return_perc: Option<f64>, // Option since this might be NAN and json makes NANs to nulls
     pub total_payments: f64,
 }
 impl FinalBalance {
