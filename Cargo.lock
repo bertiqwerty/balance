@@ -104,30 +104,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d468802bab17cbc0cc575e9b053f41e72aa36bfa6b7f55e3529ffa43161b97fa"
 
 [[package]]
-name = "balance"
-version = "0.1.0"
-dependencies = [
- "console_error_panic_hook",
- "csv",
- "eframe",
- "egui",
- "egui_plot",
- "ehttp",
- "exmex",
- "js-sys",
- "rand",
- "rand_distr",
- "serde",
- "serde-wasm-bindgen",
- "serde_json",
- "tracing-subscriber",
- "tracing-wasm",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
-]
-
-[[package]]
 name = "base64"
 version = "0.21.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1388,6 +1364,30 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed7e3d950b66e19e0c372f3fa3fbbcf85b1746b571f74e0c2af6042a5c93420a"
 dependencies = [
  "cty",
+]
+
+[[package]]
+name = "rebalance"
+version = "0.1.0"
+dependencies = [
+ "console_error_panic_hook",
+ "csv",
+ "eframe",
+ "egui",
+ "egui_plot",
+ "ehttp",
+ "exmex",
+ "js-sys",
+ "rand",
+ "rand_distr",
+ "serde",
+ "serde-wasm-bindgen",
+ "serde_json",
+ "tracing-subscriber",
+ "tracing-wasm",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
 ]
 
 [[package]]

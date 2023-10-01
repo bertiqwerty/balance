@@ -1,9 +1,9 @@
 [package]
-name = "balance"
+name = "rebalance"
 version = "0.1.0"
 authors = ["Behrang Shafei"]
 edition = "2021"
-rust-version = "1.65"
+rust-version = "1.71"
 
 
 [dependencies]
