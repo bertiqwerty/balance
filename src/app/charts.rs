@@ -10,10 +10,8 @@ use crate::{
 };
 
 use super::month_slider::{MonthSlider, MonthSliderPair, SliderState};
-use egui::{
-    plot::{Corner, Legend, Line},
-    Ui,
-};
+use egui::Ui;
+use egui_plot::{Corner, Legend, Line, Plot};
 use serde::{Deserialize, Serialize};
 use std::iter::Iterator;
 use std::{fmt::Display, iter, mem, ops::RangeInclusive, str::FromStr};
@@ -552,11 +550,16 @@ impl Charts {
         };
         let start_date = dates.first().copied();
         let end_date = dates.last().copied();
-        let x_fmt_tbom = move |x: f64, _range: &RangeInclusive<f64>| {
+        let x_fmt_tbom = move |x: f64, max_chars: usize, _range: &RangeInclusive<f64>| {
             if x.fract().abs() < 1e-6 {
                 let i = x.round() as usize;
                 if i < dates.len() {
-                    dates[i].to_string()
+                    let ds = dates[i].to_string();
+                    if ds.len() <= max_chars {
+                        ds
+                    } else {
+                        ds[..max_chars].to_string()
+                    }
                 } else {
                     String::new()
                 }
@@ -564,7 +567,7 @@ impl Charts {
                 String::new()
             }
         };
-        egui::plot::Plot::new("month vs price")
+        Plot::new("month vs price")
             .legend(Legend::default().position(Corner::LeftTop))
             .show_x(false)
             .x_axis_formatter(x_fmt_tbom)
