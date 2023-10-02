@@ -33,7 +33,7 @@ fn main() {
             .start(
                 "the_canvas_id", // hardcode it
                 web_options,
-                Box::new(|cc| Box::new(balance::BalanceApp::new(cc))),
+                Box::new(|cc| Box::new(rebalance::BalanceApp::new(cc))),
             )
             .await
             .expect("failed to start eframe");
