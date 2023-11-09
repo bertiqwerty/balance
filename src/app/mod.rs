@@ -102,7 +102,6 @@ fn space_sep_1000(s: String) -> String {
     let mut s_iter = s.split('.');
     let integral_part = s_iter.next().unwrap();
     let fractional_part = s_iter.next();
-    let integral_part = integral_part;
     let integral_part = if integral_part.len() > 4 {
         let start_idx = integral_part.len() % 3;
         (start_idx..integral_part.len())
