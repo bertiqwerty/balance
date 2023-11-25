@@ -11,7 +11,7 @@ use crate::io::{
     URL_WRITE_SHARELINK,
 };
 use charts::{Chart, Charts, TmpChart};
-use egui::{Context, Response, RichText, Ui, ViewportCommand};
+use egui::{Context, Response, RichText, Ui};
 use month_slider::{MonthSlider, MonthSliderPair, SliderState};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -23,7 +23,10 @@ mod ui_mut_itemlist;
 mod ui_state_types;
 
 #[cfg(not(target_arch = "wasm32"))]
-use std::{fs::File, io::Write};
+use {
+    egui::ViewportCommand,
+    std::{fs::File, io::Write},
+};
 
 use self::ui_state_types::{
     FinalBalance, ParsedSimInput, PaymentData, RestMethod, RestRequest, RestRequestState, SimInput,
