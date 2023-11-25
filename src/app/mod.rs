@@ -11,7 +11,7 @@ use crate::io::{
     URL_WRITE_SHARELINK,
 };
 use charts::{Chart, Charts, TmpChart};
-use egui::{Context, Response, RichText, Ui};
+use egui::{Context, Response, RichText, Ui, ViewportCommand};
 use month_slider::{MonthSlider, MonthSliderPair, SliderState};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -942,7 +942,7 @@ impl<'a> eframe::App for BalanceApp<'a> {
                         *self = Self::default();
                     }
                     if ui.button("Quit").clicked() {
-                        _frame.close();
+                        ctx.send_viewport_cmd(ViewportCommand::Close);
                     }
                 });
             });
