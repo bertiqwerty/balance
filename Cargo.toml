@@ -26,7 +26,7 @@ eframe = { version = "0.24.1", default-features = false, features = [
     "persistence",   # Enable restoring app state when restarting the app.
 ] }
 serde = { version = "1", features = ["derive"] }
-exmex = { version = "0.18.0", features = ["serde", "value"] }
+exmex = { version = "0.19.0", features = ["serde", "value"] }
 web-sys = { version = "0.3.64", features = [
     "Window",
     "Document",
