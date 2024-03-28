@@ -424,7 +424,7 @@ impl Charts {
                                 );
                             }
 
-                            if slider.drag_released() {
+                            if slider.drag_stopped() {
                                 recompute = true;
                             }
 

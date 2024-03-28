@@ -81,7 +81,7 @@ impl MonthSlider {
                             self.possible_dates[idx.round() as usize].to_string()
                         }),
                 )
-                .drag_released();
+                .drag_stopped();
             self.slider_state = SliderState::Some(tmp_idx);
             changed
         } else {
