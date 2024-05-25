@@ -26,6 +26,7 @@ fn eval(expr: &Expr, vars: &[Val<i32, f64>]) -> BlcResult<f64> {
         }
         Val::None => Err(blcerr!("Parsed expression returned none"))?,
         Val::Error(e) => Err(BlcError::new(e.msg()))?,
+        Val::Array(_) => Err(blcerr!("Parsed expression returned array"))?,
     };
     Ok(x)
 }
