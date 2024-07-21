@@ -554,16 +554,11 @@ impl Charts {
         };
         let start_date = dates.first().copied();
         let end_date = dates.last().copied();
-        let x_fmt_tbom = move |x: GridMark, max_chars: usize, _range: &RangeInclusive<f64>| {
+        let x_fmt_tbom = move |x: GridMark, _range: &RangeInclusive<f64>| {
             if x.value.fract().abs() < 1e-6 {
                 let i = x.value.round() as usize;
                 if i < dates.len() {
-                    let ds = dates[i].to_string();
-                    if ds.len() <= max_chars {
-                        ds
-                    } else {
-                        ds[..max_chars].to_string()
-                    }
+                    dates[i].to_string()
                 } else {
                     String::new()
                 }

@@ -11,7 +11,7 @@ fn main() {
     if let Err(e) = eframe::run_native(
         "Balance",
         native_options,
-        Box::new(|cc| Box::new(rebalance::BalanceApp::new(cc))),
+        Box::new(|cc| Ok(Box::new(rebalance::BalanceApp::new(cc)))),
     ) {
         println!("{e:?}");
     }
