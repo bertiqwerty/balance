@@ -13,6 +13,7 @@ jobs:
     name: Check and test
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - name: Install reqs
         run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libspeechd-dev libxkbcommon-dev libssl-dev
       - name: Check
