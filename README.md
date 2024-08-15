@@ -3,7 +3,7 @@
 [![dependency status](https://deps.rs/repo/github/bertiqwerty/balance/status.svg)](https://deps.rs/repo/github/bertiqwerty/balance)
 
 Simulate portfolio balance or backtest with or without rebalancing under https://www.bertiqwerty.com/balance/.
-Alternatively, you can run Balance as a desktop app if you have the Rust and Cargo installed via
+Alternatively, you can run Balance as a desktop app if you have Rust installed via
 ```
 cargo install rebalance
 rebalance
