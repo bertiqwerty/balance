@@ -155,7 +155,7 @@ pub struct BalanceApp<'a> {
     final_balance: Option<FinalBalance>,
 }
 
-impl<'a> BalanceApp<'a> {
+impl BalanceApp<'_> {
     /// Called once before the first frame.
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         // Load previous app state (if any).
@@ -925,7 +925,7 @@ impl<'a> BalanceApp<'a> {
     }
 }
 
-impl<'a> eframe::App for BalanceApp<'a> {
+impl eframe::App for BalanceApp<'_> {
     /// Called by the frame work to save state before shutdown.
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         eframe::set_value(storage, eframe::APP_KEY, self);

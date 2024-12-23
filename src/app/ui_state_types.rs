@@ -77,7 +77,7 @@ impl<'a> RestRequest<'a> {
         self.state = RestRequestState::InProgress(name);
     }
 }
-impl<'a> Default for RestRequest<'a> {
+impl Default for RestRequest<'_> {
     fn default() -> Self {
         Self::new()
     }

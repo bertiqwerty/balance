@@ -108,7 +108,7 @@ impl RebalanceTrigger {
     }
 }
 
-impl<'a> RebalanceData<'a> {
+impl RebalanceData<'_> {
     fn is_triggered_by_interval(&self, month: usize) -> bool {
         if let Some(interval) = self.trigger.interval {
             interval > 0 && month % interval == 0
