@@ -21,6 +21,8 @@ fn main() {
 #[cfg(target_arch = "wasm32")]
 fn main() {
     // Make sure panics are logged using `console.error`.
+
+    use wasm_bindgen::JsCast;
     console_error_panic_hook::set_once();
 
     // Redirect tracing to console.log and friends:
@@ -29,9 +31,19 @@ fn main() {
     let web_options = eframe::WebOptions::default();
 
     wasm_bindgen_futures::spawn_local(async {
+        let document = web_sys::window()
+            .expect("No window")
+            .document()
+            .expect("No document");
+
+        let canvas = document
+            .get_element_by_id("the_canvas_id")
+            .expect("Failed to find the_canvas_id")
+            .dyn_into::<web_sys::HtmlCanvasElement>()
+            .expect("the_canvas_id was not a HtmlCanvasElement");
         eframe::WebRunner::new()
             .start(
-                "the_canvas_id", // hardcode it
+                canvas,
                 web_options,
                 Box::new(|cc| Ok(Box::new(rebalance::BalanceApp::new(cc)))),
             )
