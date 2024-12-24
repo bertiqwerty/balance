@@ -15,7 +15,7 @@ categories = ["simulation", "finance"]
 include = ["**/*.rs", "Cargo.toml"]
 
 [dependencies]
-csv = "1.3.0"
+csv = "1.3.1"
 egui = "0.30.0"
 rand = { version = "0.8.5", default-features = false, features = ["std_rng"] }
 rand_distr = { version = "0.4.3", default-features = false }
@@ -24,10 +24,11 @@ eframe = { version = "0.30.0", default-features = false, features = [
     "default_fonts", # Embed the default egui fonts.
     "glow",          # Use the glow rendering backend. Alternative: "wgpu".
     "persistence",   # Enable restoring app state when restarting the app.
+    "wayland"
 ] }
-serde = { version = "1", features = ["derive"] }
+serde = { version = "1.0.216", features = ["derive"] }
 exmex = { version = "0.20.3", features = ["serde", "value"] }
-web-sys = { version = "0.3.70", features = [
+web-sys = { version = "0.3.76", features = [
     "Window",
     "Document",
     "Url",
@@ -37,13 +38,13 @@ web-sys = { version = "0.3.70", features = [
     "HtmlElement",
     "CssStyleDeclaration",
 ] }
-serde-wasm-bindgen = "0.6"
-wasm-bindgen-futures = "0.4"
-wasm-bindgen = "0.2.93"
-js-sys = "0.3.70"
+serde-wasm-bindgen = "0.6.5"
+wasm-bindgen-futures = "0.4.49"
+wasm-bindgen = "0.2.99"
+js-sys = "0.3.76"
 # wasm-bindgen-test = "0.3.33"
 ehttp = "0.5.0"
-serde_json = "1.0.124"
+serde_json = "1.0.134"
 egui_plot = "0.30.0"
 # native:
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
