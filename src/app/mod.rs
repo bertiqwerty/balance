@@ -11,7 +11,7 @@ use crate::io::{
     URL_WRITE_SHARELINK,
 };
 use charts::{Chart, Charts, TmpChart};
-use egui::{Context, Response, RichText, Ui};
+use egui::{Context, OutputCommand, Response, RichText, Ui};
 use month_slider::{MonthSlider, MonthSliderPair, SliderState};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -241,7 +241,8 @@ impl BalanceApp<'_> {
                             let v: ResponsePayload<WriteJsonData> =
                                 serde_json::from_str(json_str).unwrap();
                             let session_id = v.json_data.session_id;
-                            o.copied_text = sessionid_to_link(&session_id);
+                            o.commands =
+                                vec![OutputCommand::CopyText(sessionid_to_link(&session_id))];
                         });
                         self.sharelink_request.state = RestRequestState::None;
                     } else {

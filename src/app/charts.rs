@@ -244,9 +244,9 @@ impl Chart {
         start_date: Date,
         end_date: Date,
         initial_balance: Option<f64>,
-    ) -> BlcResult<Line> {
+    ) -> BlcResult<Line<'_>> {
         let vals = self.values_between_dates(start_date, end_date, initial_balance)?;
-        Ok(Line::new(vals).name(self.name.clone()))
+        Ok(Line::new(self.name.clone(), vals))
     }
 
     fn sliced_values(&self, start_date: Date, end_date: Date) -> BlcResult<&[f64]> {
