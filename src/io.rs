@@ -14,7 +14,7 @@ pub fn sessionid_to_link(session_id: &str) -> String {
 pub fn sessionid_from_link(link: &str) -> Option<String> {
     if link.contains("session_id=") {
         link.split('?')
-            .last()
+            .next_back()
             .and_then(|s| s.split("session_id=").last())
             .map(|s| {
                 s.chars()

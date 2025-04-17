@@ -173,8 +173,7 @@ pub fn find_shortestlen<'a>(price_devs: &'a [&'a [f64]]) -> Option<usize> {
 /// Compute the balance given initial values and price developments of securities
 ///
 /// Arguments
-/// * `price_devs`         - developments of the individual securities (e.g., stock prices, index prices, ...)
-///                          2d-vector, first axis addresses the security, second axis is the price
+/// * `price_devs`         - developments of the individual securities (e.g., stock prices, index prices, ...) 2d-vector, first axis addresses the security, second axis is the price
 /// * `initial_capital`    - total amount of initial investment
 /// * `monthly_payments    - monthly payments for each security, e.g., from a savings plan
 /// * `rebalance_interval` - pass if indices are rebalanced
