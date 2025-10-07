@@ -122,7 +122,7 @@ impl RebalanceData<'_> {
             let deviation = values
                 .iter()
                 .zip(self.fractions)
-                .map(|(b, fr)| ((fr - b / portfolio_value).abs()))
+                .map(|(b, fr)| (fr - b / portfolio_value).abs())
                 .max_by(|a, b| a.partial_cmp(b).unwrap());
             deviation > Some(max_dev)
         } else {
