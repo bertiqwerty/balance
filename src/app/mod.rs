@@ -458,7 +458,7 @@ impl BalanceApp<'_> {
             }
         };
     }
-    fn ui_add_price_dev(&mut self, ui: &mut Ui, ctx: &egui::Context) {
+    fn ui_add_price_dev(&mut self, ui: &mut Ui) {
         egui::CollapsingHeader::new("Simulate price development").show(ui, |ui| {
             egui::Grid::new("simulate-inputs")
                 .num_columns(2)
@@ -558,7 +558,7 @@ impl BalanceApp<'_> {
                             &url,
                             name,
                             RestMethod::Get,
-                            Some(ctx.clone()),
+                            Some(ui.ctx().clone()),
                         );
                         self.charts.plot_balance = false;
                         self.rebalance_stats = None;
@@ -714,7 +714,7 @@ impl BalanceApp<'_> {
         });
         ui.separator();
     }
-    fn ui_show_results(&mut self, ui: &mut Ui, ctx: &Context) {
+    fn ui_show_results(&mut self, ui: &mut Ui) {
         egui::Grid::new("balance-number-results").show(ui, |ui| {
             if let Some(final_balance) = &self.final_balance {
                 let FinalBalance {
@@ -895,7 +895,7 @@ impl BalanceApp<'_> {
         egui::CollapsingHeader::new("Share your Balance").show(ui, |ui| {
             ui.horizontal(|ui| {
                 if ui.button("Copy link to clipboard").clicked() {
-                    self.trigger_sharelink(ctx);
+                    self.trigger_sharelink(ui.ctx());
                 }
                 #[cfg(not(target_arch = "wasm32"))]
                 {
@@ -931,14 +931,15 @@ impl eframe::App for BalanceApp<'_> {
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         eframe::set_value(storage, eframe::APP_KEY, self);
     }
+
     /// Called each time the UI needs repainting, which may be many times per second.
     /// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.check_csv_download();
         self.check_load();
 
         #[cfg(not(target_arch = "wasm32"))] // no File->Quit on web pages!
-        egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
+        egui::Panel::top("top_panel").show_inside(ui, |ui| {
             // The top panel is often a good place for a menu bar:
             egui::MenuBar::new().ui(ui, |ui| {
                 ui.menu_button("File", |ui| {
@@ -946,13 +947,13 @@ impl eframe::App for BalanceApp<'_> {
                         *self = Self::default();
                     }
                     if ui.button("Quit").clicked() {
-                        ctx.send_viewport_cmd(ViewportCommand::Close);
+                        ui.ctx().send_viewport_cmd(ViewportCommand::Close);
                     }
                 });
             });
         });
 
-        egui::CentralPanel::default().show(ctx, |ui| {
+        egui::CentralPanel::default().show_inside(ui, |ui| {
             self.check_sharelink(ui);
             egui::ScrollArea::new([true, true]).show(ui, |ui| {
                 heading(ui, "Balance");
@@ -969,12 +970,12 @@ impl eframe::App for BalanceApp<'_> {
                 }
                 ui.separator();
                 heading2(ui, "1. Add Price Development(s)");
-                self.ui_add_price_dev(ui, ctx);
+                self.ui_add_price_dev(ui);
                 ui.separator();
                 heading2(ui, "2. Set Investments");
                 self.ui_set_investment(ui);
                 heading2(ui, "3. Investigate Results");
-                self.ui_show_results(ui, ctx);
+                self.ui_show_results(ui);
             });
         });
     }
