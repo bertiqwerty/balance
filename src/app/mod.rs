@@ -939,7 +939,7 @@ impl eframe::App for BalanceApp<'_> {
         self.check_load();
 
         #[cfg(not(target_arch = "wasm32"))] // no File->Quit on web pages!
-        egui::Panel::top("top_panel").show_inside(ui, |ui| {
+        egui::Panel::top("top_panel").show(ui, |ui| {
             // The top panel is often a good place for a menu bar:
             egui::MenuBar::new().ui(ui, |ui| {
                 ui.menu_button("File", |ui| {
@@ -953,7 +953,7 @@ impl eframe::App for BalanceApp<'_> {
             });
         });
 
-        egui::CentralPanel::default().show_inside(ui, |ui| {
+        egui::CentralPanel::default().show(ui, |ui| {
             self.check_sharelink(ui);
             egui::ScrollArea::new([true, true]).show(ui, |ui| {
                 heading(ui, "Balance");
