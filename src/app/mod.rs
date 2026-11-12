@@ -251,7 +251,7 @@ impl BalanceApp<'_> {
                         let status = format!(
                             "status {}, {}, {}",
                             resp.status,
-                            &v["message"].to_string(),
+                            v["message"],
                             resp.status_text.clone()
                         );
                         self.status_msg = Some(status);
@@ -296,7 +296,7 @@ impl BalanceApp<'_> {
                         let status = format!(
                             "status {}, {}, {}",
                             resp.status,
-                            &v["message"].to_string(),
+                            v["message"],
                             resp.status_text.clone()
                         );
                         self.status_msg = Some(status);
